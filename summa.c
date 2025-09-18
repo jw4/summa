@@ -7,6 +7,7 @@
 #include <time.h>
 #include "summa.h"
 #include "summa_scan.h"
+#include "summa_db.h"
 
 /* Version information */
 #ifndef VERSION
@@ -228,6 +229,13 @@ void print_usage(const char *progname) {
     printf("  --date-from-path    Extract dates from directory paths\n");
     printf("  --include PATTERN   Include only files matching pattern\n");
     printf("  --exclude PATTERN   Exclude files matching pattern\n");
+    printf("\n");
+    printf("Database operations:\n");
+    printf("  --db [PATH]         Use SQLite database (default: ~/.summa/summa.db)\n");
+    printf("  --import            Import parsed entries into database\n");
+    printf("  --db-stats          Show database statistics\n");
+    printf("  --db-vacuum         Optimize database storage\n");
+    printf("  --db-backup PATH    Backup database to PATH\n");
     printf("\n");
     printf("If FILE is omitted, reads from stdin\n");
 }
@@ -1067,6 +1075,13 @@ int main(int argc, char ** argv) {
     bool show_daily = false;
     bool show_weekly = false;
     bool show_monthly = false;
+    /* Database options */
+    const char *db_path = NULL;
+    bool use_db = false;
+    bool db_import = false;
+    bool db_stats = false;
+    bool db_do_vacuum = false;
+    const char *db_backup_path = NULL;
 
     /* Scanning options */
     scan_config_t scan_config = {
@@ -1102,6 +1117,12 @@ int main(int argc, char ** argv) {
         {"from",    required_argument, 0, 1001},
         {"to",      required_argument, 0, 1002},
         {"tag",     required_argument, 0, 1003},
+        /* Database options */
+        {"db",      optional_argument, 0, 3001},
+        {"import",  no_argument,       0, 3002},
+        {"db-stats", no_argument,      0, 3003},
+        {"db-vacuum", no_argument,     0, 3004},
+        {"db-backup", required_argument, 0, 3005},
         {0, 0, 0, 0}
     };
 
@@ -1191,10 +1212,128 @@ int main(int argc, char ** argv) {
             case 1003: /* --tag */
                 filter_tag = strdup(optarg);
                 break;
+            /* Database options */
+            case 3001: /* --db */
+                use_db = true;
+                db_path = optarg ? optarg : NULL;
+                break;
+            case 3002: /* --import */
+                db_import = true;
+                use_db = true;
+                break;
+            case 3003: /* --db-stats */
+                db_stats = true;
+                use_db = true;
+                break;
+            case 3004: /* --db-vacuum */
+                db_do_vacuum = true;
+                use_db = true;
+                break;
+            case 3005: /* --db-backup */
+                db_backup_path = optarg;
+                use_db = true;
+                break;
             default:
                 print_usage(argv[0]);
                 return 1;
         }
+    }
+
+    /* Handle database operations if requested */
+    if (use_db) {
+        summa_db_t *db = db_open(db_path);
+        if (!db) {
+            fprintf(stderr, "Error: Failed to open database\n");
+            return 1;
+        }
+
+        /* Handle database maintenance operations */
+        if (db_do_vacuum) {
+            printf("Vacuuming database...\n");
+            if (db_vacuum(db)) {
+                printf("Database vacuumed successfully\n");
+            } else {
+                fprintf(stderr, "Failed to vacuum database\n");
+            }
+            db_close(db);
+            return 0;
+        }
+
+        if (db_backup_path) {
+            printf("Backing up database to %s...\n", db_backup_path);
+            if (db_backup(db, db_backup_path)) {
+                printf("Database backed up successfully\n");
+            } else {
+                fprintf(stderr, "Failed to backup database\n");
+            }
+            db_close(db);
+            return 0;
+        }
+
+        if (db_stats) {
+            db_stats_t *stats = db_get_stats(db);
+            if (stats) {
+                printf("=== DATABASE STATISTICS ===\n");
+                printf("Total entries: %d\n", stats->total_entries);
+                printf("Total files: %d\n", stats->total_files);
+                printf("Total tags: %d\n", stats->total_tags);
+                printf("Total time: %dh %dm\n",
+                       stats->total_minutes / 60,
+                       stats->total_minutes % 60);
+                if (stats->earliest_date.year > 0) {
+                    printf("Date range: %04d-%02d-%02d to %04d-%02d-%02d\n",
+                           stats->earliest_date.year, stats->earliest_date.month,
+                           stats->earliest_date.day,
+                           stats->latest_date.year, stats->latest_date.month,
+                           stats->latest_date.day);
+                }
+                free(stats);
+            }
+            db_close(db);
+            return 0;
+        }
+
+        /* If importing, we'll do that after parsing the file */
+        if (!db_import) {
+            /* Query from database */
+            /* If we have date filters, use them */
+            if (filter_from.year > 0 && filter_to.year > 0) {
+                current_logfile = db_query_by_date_range(db, filter_from, filter_to);
+            } else if (filter_tag) {
+                current_logfile = db_query_by_tag(db, filter_tag);
+            } else {
+                /* Query all entries */
+                date_t from = {2000, 1, 1};
+                date_t to = {2100, 12, 31};
+                current_logfile = db_query_by_date_range(db, from, to);
+            }
+
+            if (current_logfile && current_logfile->count > 0) {
+                /* Display results */
+                if (show_daily) {
+                    print_daily_summary(current_logfile);
+                } else if (show_weekly) {
+                    print_weekly_summary(current_logfile);
+                } else if (show_monthly) {
+                    print_monthly_summary(current_logfile);
+                } else if (format == FORMAT_TEXT) {
+                    print_summary(current_logfile);
+                } else if (format == FORMAT_CSV) {
+                    print_csv(current_logfile);
+                } else if (format == FORMAT_JSON) {
+                    print_json(current_logfile);
+                }
+            } else {
+                printf("No entries found in database\n");
+            }
+
+            free_logfile(current_logfile);
+            db_close(db);
+            return 0;
+        }
+
+        /* For import, continue to parse the file and then import */
+        /* The database will be used after parsing */
     }
 
     /* Handle directory scanning if requested */
@@ -1295,6 +1434,21 @@ int main(int argc, char ** argv) {
     /* Close input file if opened */
     if (input_file && input) {
         fclose(input);
+    }
+
+    /* Handle database import if requested */
+    if (use_db && db_import && current_logfile && current_logfile->count > 0) {
+        summa_db_t *db = db_open(db_path);
+        if (db) {
+            printf("Importing %d entries to database...\n", current_logfile->count);
+            const char *import_file = input_file ? input_file : "stdin";
+            if (db_import_file(db, import_file, current_logfile)) {
+                printf("Successfully imported %d entries\n", current_logfile->count);
+            } else {
+                fprintf(stderr, "Failed to import entries\n");
+            }
+            db_close(db);
+        }
     }
 
     /* Clean up */

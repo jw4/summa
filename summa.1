@@ -1,5 +1,5 @@
 .\" Summa man page
-.TH SUMMA 1 "September 2024" "summa v0.0.1" "User Commands"
+.TH SUMMA 1 "September 2025" "summa v0.0.2" "User Commands"
 .SH NAME
 summa \- parse and analyze time tracking logs
 .SH SYNOPSIS
@@ -87,6 +87,26 @@ Filter entries up to this date (inclusive).
 .TP
 .BR \-\-tag " " \fITAG\fR
 Filter entries by tag (without # prefix).
+.SS Database Options
+.TP
+.BR \-\-db " " \fI[PATH]\fR
+Use SQLite database. If PATH is specified, use that database file.
+Otherwise use the default location (~/.summa/summa.db).
+.TP
+.B \-\-import
+Import parsed entries into the database. Must be used with \-\-db.
+.TP
+.B \-\-db\-stats
+Display database statistics including total entries, files, tags,
+and date ranges. Must be used with \-\-db.
+.TP
+.B \-\-db\-vacuum
+Optimize database storage by reclaiming unused space.
+Must be used with \-\-db.
+.TP
+.BR \-\-db\-backup " " \fIPATH\fR
+Create a backup of the database at the specified PATH.
+Must be used with \-\-db.
 .SH TIME ENTRY FORMAT
 Each time entry consists of:
 .TP
@@ -190,6 +210,34 @@ Combine filters:
 .RS
 summa \-\-tag urgent \-\-from 2024\-01\-01 \-d logs.md
 .RE
+.SS Database Examples
+Import entries to database:
+.PP
+.RS
+summa logfile.md \-\-db \-\-import
+.RE
+.PP
+Query database by tag:
+.PP
+.RS
+summa \-\-db \-\-tag meeting \-\-weekly
+.RE
+.PP
+Scan directory and import to database:
+.PP
+.RS
+summa \-S ~/logs \-R \-\-db \-\-import
+.RE
+.PP
+Database maintenance:
+.PP
+.RS
+summa \-\-db \-\-db\-stats
+.br
+summa \-\-db \-\-db\-vacuum
+.br
+summa \-\-db \-\-db\-backup ~/backup.db
+.RE
 .SH INPUT FILE FORMAT
 Example time log file:
 .PP
@@ -285,12 +333,42 @@ Analyze productivity by combining filters:
 summa \-S ~/notes \-R \-\-date\-from\-filename \\
       \-\-tag focus \-\-monthly \-\-from 2024\-01\-01
 .RE
+.SH DATABASE SUPPORT
+Summa includes built-in SQLite database support for persistent storage and
+advanced querying capabilities.
+.SS Database Location
+By default, the database is stored at:
+.RS
+~/.summa/summa.db
+.RE
+.PP
+You can specify a custom database location with the \-\-db option.
+.SS Database Schema
+The database stores:
+.IP \(bu 3
+Files: Source files and their metadata
+.IP \(bu 3
+Entries: Time entries with date, duration, and descriptions
+.IP \(bu 3
+Tags: Unique tags and their associations with entries
+.IP \(bu 3
+Metadata: Database version and configuration
+.SS Performance
+The database provides:
+.IP \(bu 3
+Fast queries across large datasets
+.IP \(bu 3
+Indexed searches by date, tag, and file
+.IP \(bu 3
+Persistent storage for historical data
+.IP \(bu 3
+Transaction support for data integrity
 .SH BUGS
-Report bugs at: https://github.com/yourusername/summa/issues
+Report bugs at: https://github.com/jw4/summa/issues
 .SH AUTHOR
-Written by Your Name
+Written by the Summa contributors
 .SH COPYRIGHT
-Copyright (C) 2024 Your Name
+Copyright (C) 2025 Summa contributors
 .br
 This is free software; see the source for copying conditions.
 .SH SEE ALSO

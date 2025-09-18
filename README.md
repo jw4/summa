@@ -9,6 +9,9 @@ A fast and flexible command-line time tracking log file parser that helps you an
 - **Multiple Output Formats**: Text, CSV, and JSON
 - **Tag-based Categorization**: Group and analyze time by hashtags
 - **Percentage Tracking**: Track effort levels with percentage markers
+- **Directory Scanning**: Automatically discover and process time log files
+- **SQLite Database**: Store and query entries with persistent storage
+- **Smart Date Inference**: Extract dates from filenames and directory paths
 - **Comprehensive Validation**: Detects invalid dates, times, and percentages
 - **Unicode Support**: Handle international characters and emojis
 - **Fast Performance**: Process thousands of entries in milliseconds
@@ -37,6 +40,7 @@ make install PREFIX=/usr/local
 - C compiler (gcc or clang)
 - Make build tool
 - Standard C library
+- SQLite3 library (for database features)
 
 ## Log Format
 
@@ -221,6 +225,30 @@ summa --scan ~/work --include .md --recursive
 summa -S ~/logs -R -w --from 2024-01-01
 ```
 
+### Database Operations
+
+```bash
+# Import time logs into SQLite database
+summa logfile.md --db --import
+summa --scan ~/logs -R --db --import  # Import from directory scan
+
+# Query database by tag
+summa --db --tag meeting
+
+# Query with date range
+summa --db --from 2024-01-01 --to 2024-12-31 --monthly
+
+# Database maintenance
+summa --db --db-stats                 # Show statistics
+summa --db --db-vacuum                # Optimize storage
+summa --db --db-backup ~/backup.db    # Create backup
+
+# Use custom database location
+summa --db ~/.mydata/time.db --import logfile.md
+```
+
+The database is stored at `~/.summa/summa.db` by default. All query operations work with the same filtering and summary options as file-based parsing.
+
 ## Documentation
 
 Full documentation is available via the man page:
@@ -248,6 +276,11 @@ man summa
 |             | `--from DATE`          | Filter entries from DATE (YYYY-MM-DD)          |
 |             | `--to DATE`            | Filter entries to DATE (YYYY-MM-DD)            |
 |             | `--tag TAG`            | Filter entries by TAG (without #)              |
+|             | `--db [PATH]`          | Use SQLite database (default: ~/.summa/summa.db) |
+|             | `--import`             | Import entries into database                   |
+|             | `--db-stats`           | Show database statistics                       |
+|             | `--db-vacuum`          | Optimize database storage                      |
+|             | `--db-backup PATH`     | Backup database to PATH                        |
 
 ## Output Examples
 
@@ -356,40 +389,6 @@ make test
 ./test_summa.sh
 ```
 
-## Planned Enhancements
-
-### SQLite Database Support (Coming Soon)
-
-A comprehensive plan has been developed to add optional SQLite database storage to Summa, which will enable:
-
-- **Persistent Storage**: Store parsed entries in a local database for long-term analysis
-- **Advanced Querying**: Use SQL to perform complex queries across your entire time tracking history
-- **Multi-file Management**: Import and manage entries from multiple log files
-- **Performance**: Handle datasets with 100,000+ entries efficiently
-- **Data Export**: Export to various formats including SQL dumps
-- **Backward Compatibility**: All existing features will continue to work without a database
-
-See [SQLITE_PLAN.md](SQLITE_PLAN.md) for the detailed implementation plan.
-
-### Intelligent Directory Scanning (Planned)
-
-A comprehensive system for automatically discovering and parsing time entries across entire directory structures:
-
-- **Auto-Discovery**: Automatically find all files containing time entries in a directory tree
-- **Smart Date Inference**: Intelligently deduce dates from filenames, paths, and context when headers are missing
-- **Multiple Format Support**: Handle various file types (.md, .txt, .log) and naming conventions
-- **Flexible Structure**: Support different organizational patterns (flat, year/month/day, project-based)
-- **Conflict Resolution**: Handle duplicate entries and conflicting date information gracefully
-- **Performance**: Parallel processing and caching for efficient scanning of large directories
-
-Example usage:
-
-```bash
-summa --scan-dir ~/notes --date-from-filename  # Scan with date extraction
-summa -S ~/work --recursive --parallel         # Fast recursive scan
-```
-
-See [DIRECTORY_SCAN_PLAN.md](DIRECTORY_SCAN_PLAN.md) for the detailed implementation plan.
 
 ## Contributing
 

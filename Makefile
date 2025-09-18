@@ -28,8 +28,11 @@ else
 endif
 
 # Source and object files
-SRCS := summa.c summa_scan.c
+SRCS := summa.c summa_scan.c summa_db.c
 OBJS := $(SRCS:.c=.o)
+
+# SQLite3 linking
+LDFLAGS += -lsqlite3
 
 # Default target
 .DEFAULT_GOAL := build
