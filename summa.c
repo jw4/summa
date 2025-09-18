@@ -5,54 +5,15 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <time.h>
+#include "summa.h"
+#include "summa_scan.h"
 
 /* Version information */
 #ifndef VERSION
 #define VERSION "unknown"
 #endif
 
-/* Date structure */
-typedef struct {
-    int year;
-    int month;
-    int day;
-} date_t;
-
-/* Time structure for HH:MM */
-typedef struct summa_time {
-    int hour;
-    int minute;
-} summa_time_t;
-
-/* Time span structure */
-typedef struct {
-    summa_time_t start;
-    summa_time_t end;
-    int duration_minutes;  /* Calculated duration */
-} timespan_t;
-
-/* Tag list */
-typedef struct {
-    char **tags;
-    int count;
-    int capacity;
-} taglist_t;
-
-/* Log entry structure */
-typedef struct {
-    date_t date;  /* Date of this entry */
-    timespan_t timespan;
-    char *description;
-    taglist_t *tags;
-    int percentage;  /* 0 if not specified, 1-100 if specified */
-} logline_t;
-
-/* Collection of all log entries */
-typedef struct {
-    logline_t **entries;
-    int count;
-    int capacity;
-} logfile_t;
+/* Type definitions are now in summa.h */
 
 /* Tag aggregation structure */
 typedef struct {
@@ -67,9 +28,9 @@ date_t current_date = {0, 0, 0};  /* Current date being processed */
 bool verbose = false;  /* Verbose mode flag */
 
 /* Filter options */
-static date_t filter_from = {0, 0, 0};
-static date_t filter_to = {0, 0, 0};
-static char* filter_tag = NULL;
+date_t filter_from = {0, 0, 0};
+date_t filter_to = {0, 0, 0};
+char* filter_tag = NULL;
 
 /* Line classification types */
 typedef enum {
@@ -259,6 +220,14 @@ void print_usage(const char *progname) {
     printf("  --from DATE         Filter entries from DATE (YYYY-MM-DD)\n");
     printf("  --to DATE           Filter entries to DATE (YYYY-MM-DD)\n");
     printf("  --tag TAG           Filter entries by TAG (without #)\n");
+    printf("\n");
+    printf("Directory scanning:\n");
+    printf("  -S, --scan PATH     Scan directory for time log files\n");
+    printf("  -R, --recursive     Scan directories recursively\n");
+    printf("  --date-from-filename Extract dates from filenames\n");
+    printf("  --date-from-path    Extract dates from directory paths\n");
+    printf("  --include PATTERN   Include only files matching pattern\n");
+    printf("  --exclude PATTERN   Exclude files matching pattern\n");
     printf("\n");
     printf("If FILE is omitted, reads from stdin\n");
 }
@@ -1094,9 +1063,25 @@ int main(int argc, char ** argv) {
     int opt;
     output_format_t format = FORMAT_TEXT;
     const char *input_file = NULL;
+    const char *scan_path = NULL;
     bool show_daily = false;
     bool show_weekly = false;
     bool show_monthly = false;
+
+    /* Scanning options */
+    scan_config_t scan_config = {
+        .recursive = false,
+        .follow_symlinks = false,
+        .date_from_filename = false,
+        .date_from_path = false,
+        .verbose = false,
+        .max_depth = 10,
+        .max_file_size = 10 * 1024 * 1024,  /* 10MB */
+        .exclude_patterns = NULL,
+        .exclude_count = 0,
+        .include_patterns = NULL,
+        .include_count = 0
+    };
 
     /* Option parsing */
     static struct option long_options[] = {
@@ -1108,13 +1093,19 @@ int main(int argc, char ** argv) {
         {"weekly",  no_argument,       0, 'w'},
         {"monthly", no_argument,       0, 'm'},
         {"verbose", no_argument,       0, 'v'},
+        {"scan",    required_argument, 0, 'S'},
+        {"recursive", no_argument,     0, 'R'},
+        {"date-from-filename", no_argument, 0, 2001},
+        {"date-from-path", no_argument, 0, 2002},
+        {"include", required_argument, 0, 2003},
+        {"exclude", required_argument, 0, 2004},
         {"from",    required_argument, 0, 1001},
         {"to",      required_argument, 0, 1002},
         {"tag",     required_argument, 0, 1003},
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "hVf:tdwmv", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hVf:tdwmvS:R", long_options, NULL)) != -1) {
         switch (opt) {
             case 'h':
                 print_usage(argv[0]);
@@ -1149,6 +1140,33 @@ int main(int argc, char ** argv) {
                 break;
             case 'v':
                 verbose = true;
+                scan_config.verbose = true;
+                break;
+            case 'S':
+                scan_path = optarg;
+                break;
+            case 'R':
+                scan_config.recursive = true;
+                break;
+            case 2001: /* --date-from-filename */
+                scan_config.date_from_filename = true;
+                break;
+            case 2002: /* --date-from-path */
+                scan_config.date_from_path = true;
+                break;
+            case 2003: /* --include */
+                /* Add include pattern */
+                scan_config.include_count++;
+                scan_config.include_patterns = realloc(scan_config.include_patterns,
+                                                      scan_config.include_count * sizeof(char*));
+                scan_config.include_patterns[scan_config.include_count - 1] = strdup(optarg);
+                break;
+            case 2004: /* --exclude */
+                /* Add exclude pattern */
+                scan_config.exclude_count++;
+                scan_config.exclude_patterns = realloc(scan_config.exclude_patterns,
+                                                      scan_config.exclude_count * sizeof(char*));
+                scan_config.exclude_patterns[scan_config.exclude_count - 1] = strdup(optarg);
                 break;
             case 1001: /* --from */
                 if (sscanf(optarg, "%d-%d-%d", &filter_from.year, &filter_from.month, &filter_from.day) != 3) {
@@ -1177,6 +1195,50 @@ int main(int argc, char ** argv) {
                 print_usage(argv[0]);
                 return 1;
         }
+    }
+
+    /* Handle directory scanning if requested */
+    if (scan_path) {
+        /* Perform directory scan */
+        scan_result_t *scan_result = scan_directory(scan_path, &scan_config);
+
+        if (!scan_result || scan_result->file_count == 0) {
+            fprintf(stderr, "No time log files found in %s\n", scan_path);
+            return 1;
+        }
+
+        printf("Found %d time log files with %d total entries\n",
+               scan_result->file_count, scan_result->entries_total);
+
+        if (scan_result->files_without_dates > 0) {
+            printf("Files with inferred dates: %d\n",
+                   scan_result->files_with_dates - scan_result->files_without_dates);
+        }
+
+        /* Process scan results */
+        current_logfile = process_scan_results(scan_result, &scan_config);
+
+        free_scan_result(scan_result);
+
+        /* Continue to display results */
+        if (current_logfile && current_logfile->count > 0) {
+            if (show_daily) {
+                print_daily_summary(current_logfile);
+            } else if (show_weekly) {
+                print_weekly_summary(current_logfile);
+            } else if (show_monthly) {
+                print_monthly_summary(current_logfile);
+            } else if (format == FORMAT_TEXT) {
+                print_summary(current_logfile);
+            } else if (format == FORMAT_CSV) {
+                print_csv(current_logfile);
+            } else if (format == FORMAT_JSON) {
+                print_json(current_logfile);
+            }
+        }
+
+        free_logfile(current_logfile);
+        return 0;
     }
 
     /* Get input file if provided */
@@ -1237,6 +1299,17 @@ int main(int argc, char ** argv) {
 
     /* Clean up */
     free_logfile(current_logfile);
+
+    /* Free include/exclude patterns */
+    for (int i = 0; i < scan_config.include_count; i++) {
+        free(scan_config.include_patterns[i]);
+    }
+    free(scan_config.include_patterns);
+
+    for (int i = 0; i < scan_config.exclude_count; i++) {
+        free(scan_config.exclude_patterns[i]);
+    }
+    free(scan_config.exclude_patterns);
 
     return result;
 }

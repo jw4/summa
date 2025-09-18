@@ -1,0 +1,4 @@
+0900-1000 Task planning and prioritization #planning
+1000-1200 Implementation of core logic #dev #backend
+1400-1530 Testing new features #test
+1530-1630 Code review and feedback #review

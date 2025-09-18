@@ -27,7 +27,7 @@ else
 endif
 
 # Source and object files
-SRCS := summa.c
+SRCS := summa.c summa_scan.c
 OBJS := $(SRCS:.c=.o)
 
 # Default target

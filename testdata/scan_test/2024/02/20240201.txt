@@ -1,0 +1,5 @@
+0900-1000 Sprint planning meeting #agile #meeting
+1000-1200 Development work on new feature #dev #feature
+1200-1230 Quick code review #review
+1400-1600 Testing and bug fixes #test #bugfix
+1600-1700 End of sprint retrospective #agile #meeting

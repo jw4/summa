@@ -673,6 +673,211 @@ test_stdin_input() {
   fi
 }
 
+# Test 18: Directory Scanning
+test_directory_scanning() {
+  print_test "Basic directory scanning"
+
+  # Test scanning the testdata/scan_test directory
+  local scan_output=$($SUMMA --scan testdata/scan_test/logs 2>&1)
+
+  if echo "$scan_output" | grep -q "Found.*time log files"; then
+    test_pass "Basic directory scanning works"
+  else
+    test_fail "Directory scanning not working"
+  fi
+
+  # Test that it finds the expected files
+  if echo "$scan_output" | grep -q "Total entries:"; then
+    test_pass "Scanner aggregates entries from multiple files"
+  else
+    test_fail "Scanner not aggregating entries"
+  fi
+
+  # Test single file scanning
+  local single_file=$($SUMMA --scan testdata/scan_test/logs/2024-01-15.md 2>&1)
+  if echo "$single_file" | grep -q "Total entries: 5"; then
+    test_pass "Single file scanning works"
+  else
+    test_fail "Single file scanning not working correctly"
+  fi
+
+  # Test non-existent path
+  local nonexist=$($SUMMA --scan /tmp/nonexistent_xyz123 2>&1)
+  if echo "$nonexist" | grep -q "Error.*does not exist"; then
+    test_pass "Non-existent path error handling works"
+  else
+    test_fail "Non-existent path not handled correctly"
+  fi
+}
+
+# Test 19: Recursive Scanning
+test_recursive_scanning() {
+  print_test "Recursive directory scanning"
+
+  # Test non-recursive (default)
+  local non_recursive=$($SUMMA --scan testdata/scan_test 2>&1)
+  local non_recursive_count=$(echo "$non_recursive" | grep -o "Found [0-9]\+" | awk '{print $2}')
+
+  # Test recursive scanning
+  local recursive=$($SUMMA --scan testdata/scan_test --recursive 2>&1)
+  local recursive_count=$(echo "$recursive" | grep -o "Found [0-9]\+" | awk '{print $2}')
+
+  if [ ! -z "$recursive_count" ] && [ ! -z "$non_recursive_count" ]; then
+    if [ "$recursive_count" -gt "$non_recursive_count" ]; then
+      test_pass "Recursive scanning finds more files ($recursive_count vs $non_recursive_count)"
+    else
+      test_fail "Recursive scanning not finding nested files"
+    fi
+  else
+    # Fallback check if counts aren't parsed
+    if echo "$recursive" | grep -q "Found.*time log files"; then
+      test_pass "Recursive scanning finds nested directories"
+    else
+      test_fail "Recursive scanning not working"
+    fi
+  fi
+
+  # Test recursive with daily summary
+  local recursive_daily=$($SUMMA --scan testdata/scan_test -R -d 2>&1)
+  if echo "$recursive_daily" | grep -q "DAILY SUMMARY"; then
+    test_pass "Recursive scanning works with daily summary"
+  else
+    test_fail "Recursive scanning with summary not working"
+  fi
+}
+
+# Test 20: Date Inference
+test_date_inference() {
+  print_test "Date inference from filenames and paths"
+
+  # Test date from filename
+  local filename_date=$($SUMMA --scan testdata/scan_test/logs --date-from-filename --verbose 2>&1)
+  if echo "$filename_date" | grep -q "2024-01-15\|date from filename"; then
+    test_pass "Date extraction from filename works"
+  else
+    test_fail "Date extraction from filename not working"
+  fi
+
+  # Test date from path
+  local path_date=$($SUMMA --scan testdata/scan_test/2024 --date-from-path --recursive --verbose 2>&1)
+  if echo "$path_date" | grep -q "2024.*01.*16\|date from path"; then
+    test_pass "Date extraction from path works"
+  else
+    test_fail "Date extraction from path not working"
+  fi
+
+  # Test YYYYMMDD format
+  local yyyymmdd=$($SUMMA --scan testdata/scan_test/2024/02 --date-from-filename --verbose 2>&1)
+  if echo "$yyyymmdd" | grep -q "2024.*02.*01\|20240201"; then
+    test_pass "YYYYMMDD date format recognized"
+  else
+    test_fail "YYYYMMDD date format not recognized"
+  fi
+
+  # Test date from header (in file content)
+  local header_date=$($SUMMA --scan testdata/scan_test/project/archive --verbose 2>&1)
+  if echo "$header_date" | grep -q "2023-12-20"; then
+    test_pass "Date from file header recognized"
+  else
+    test_fail "Date from file header not recognized"
+  fi
+
+  # Test with daily summary to verify dates are used
+  local dated_summary=$($SUMMA --scan testdata/scan_test --recursive --date-from-filename --date-from-path -d 2>&1)
+  if echo "$dated_summary" | grep -q "2024-01-15\|2024-01-16\|2024-01-17"; then
+    test_pass "Inferred dates used in daily summary"
+  else
+    test_fail "Inferred dates not applied correctly"
+  fi
+}
+
+# Test 21: File Filtering
+test_file_filtering() {
+  print_test "File filtering (--include/--exclude)"
+
+  # Test include pattern (.md files only)
+  local include_md=$($SUMMA --scan testdata/scan_test --recursive --include .md --verbose 2>&1)
+  if echo "$include_md" | grep -q "\.md" && ! echo "$include_md" | grep -q "\.txt\|\.log"; then
+    test_pass "Include pattern filters correctly (.md only)"
+  else
+    test_fail "Include pattern not filtering correctly"
+  fi
+
+  # Test exclude pattern (exclude .md files)
+  local exclude_md=$($SUMMA --scan testdata/scan_test --recursive --exclude .md --verbose 2>&1)
+  if ! echo "$exclude_md" | grep -q "\.md"; then
+    test_pass "Exclude pattern filters correctly (no .md files)"
+  else
+    test_fail "Exclude pattern not filtering correctly"
+  fi
+
+  # Test multiple include patterns
+  local multi_include=$($SUMMA --scan testdata/scan_test --recursive --include .md --include .log --verbose 2>&1)
+  if echo "$multi_include" | grep -q "\.md\|\.log" && ! echo "$multi_include" | grep -q "\.txt"; then
+    test_pass "Multiple include patterns work"
+  else
+    test_fail "Multiple include patterns not working"
+  fi
+
+  # Test that README.md is skipped (no time entries)
+  local readme_test=$($SUMMA --scan testdata/scan_test --verbose 2>&1)
+  if ! echo "$readme_test" | grep -q "README.md"; then
+    test_pass "Files without time entries are skipped"
+  else
+    test_fail "Non-log files not being filtered out"
+  fi
+}
+
+# Test 22: Scan Result Aggregation
+test_scan_aggregation() {
+  print_test "Scan result aggregation and summaries"
+
+  # Test that scanning aggregates all files
+  local aggregate=$($SUMMA --scan testdata/scan_test --recursive 2>&1)
+  if echo "$aggregate" | grep -q "Total entries:.*[0-9]\+"; then
+    local total_entries=$(echo "$aggregate" | grep "Total entries:" | tail -1 | awk '{print $3}')
+    if [ "$total_entries" -gt 15 ]; then
+      test_pass "Scan aggregates entries from multiple files ($total_entries total)"
+    else
+      test_warn "Fewer entries than expected: $total_entries"
+    fi
+  else
+    test_fail "Scan aggregation not showing total entries"
+  fi
+
+  # Test weekly summary with scanned files
+  local scan_weekly=$($SUMMA --scan testdata/scan_test -R --date-from-filename --date-from-path -w 2>&1)
+  if echo "$scan_weekly" | grep -q "WEEKLY SUMMARY"; then
+    test_pass "Weekly summary works with scanned files"
+  else
+    test_fail "Weekly summary not working with scan"
+  fi
+
+  # Test monthly summary with scanned files
+  local scan_monthly=$($SUMMA --scan testdata/scan_test -R --date-from-filename --date-from-path -m 2>&1)
+  if echo "$scan_monthly" | grep -q "MONTHLY SUMMARY"; then
+    test_pass "Monthly summary works with scanned files"
+  else
+    test_fail "Monthly summary not working with scan"
+  fi
+
+  # Test tag aggregation from scanned files
+  local scan_tags=$($SUMMA --scan testdata/scan_test -R 2>&1)
+  if echo "$scan_tags" | grep -q "#meeting\|#dev\|#test"; then
+    test_pass "Tags aggregated from scanned files"
+  else
+    test_fail "Tags not aggregated from scan"
+  fi
+
+  # Test filtering with scan
+  local scan_filter=$($SUMMA --scan testdata/scan_test -R --tag meeting 2>&1)
+  if echo "$scan_filter" | grep -q "#meeting"; then
+    test_pass "Tag filtering works with scan"
+  else
+    test_fail "Tag filtering not working with scan"
+  fi
+}
+
 # Main test execution
 main() {
   echo -e "${MAGENTA}╔════════════════════════════════════════════════════╗${NC}"
@@ -695,6 +900,13 @@ main() {
   test_daily_summary
   test_weekly_summary
   test_monthly_summary
+
+  print_header "Directory Scanning"
+  test_directory_scanning
+  test_recursive_scanning
+  test_date_inference
+  test_file_filtering
+  test_scan_aggregation
 
   print_header "Filtering"
   test_date_filtering

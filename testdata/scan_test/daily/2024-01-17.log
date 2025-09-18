@@ -1,0 +1,6 @@
+0830-0900 Morning email check #admin
+0900-1000 Team standup #meeting #daily
+1000-1100 Bug investigation #debug #urgent
+1100-1200 Fix implementation #dev #bugfix
+1400-1500 Testing the fix #test
+1500-1600 Deploy to staging #deploy #staging
