@@ -10,6 +10,7 @@ GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags 2>/dev/nu
 # Installation directories
 PREFIX ?= $(HOME)
 BINDIR := $(PREFIX)/bin
+MANDIR := $(PREFIX)/share/man/man1
 
 # Compiler settings
 CC ?= cc
@@ -48,6 +49,7 @@ help:
 	@echo "  install     Install to $(BINDIR)"
 	@echo "  uninstall   Remove from $(BINDIR)"
 	@echo "  clean       Remove build artifacts"
+	@echo "  man         Preview the man page"
 	@echo ""
 	@echo "Build options:"
 	@echo "  debug       Build with debugging symbols"
@@ -95,17 +97,27 @@ check: test
 # ============= Installation =============
 
 .PHONY: install
-install: build
+install: build install-man
 	@echo "Installing $(TARGET) to $(BINDIR)..."
 	@mkdir -p $(BINDIR)
 	@cp $(TARGET) $(BINDIR)/
 	@chmod 755 $(BINDIR)/$(TARGET)
 	@echo "Installation complete"
 
+.PHONY: install-man
+install-man:
+	@echo "Installing man page to $(MANDIR)..."
+	@mkdir -p $(MANDIR)
+	@cp summa.1 $(MANDIR)/
+	@chmod 644 $(MANDIR)/summa.1
+	@echo "Man page installed"
+
 .PHONY: uninstall
 uninstall:
 	@echo "Removing $(TARGET) from $(BINDIR)..."
 	@rm -f $(BINDIR)/$(TARGET)
+	@echo "Removing man page from $(MANDIR)..."
+	@rm -f $(MANDIR)/summa.1
 	@echo "Uninstall complete"
 
 # ============= Maintenance =============
@@ -127,6 +139,10 @@ run-example: build
 	@echo "# 2024-01-15" | ./$(TARGET)
 	@echo "0900-1000 Team meeting #meeting" | ./$(TARGET)
 	@echo "1000-1200 Development #coding" | ./$(TARGET)
+
+.PHONY: man
+man:
+	@man ./summa.1
 
 .PHONY: valgrind
 valgrind: debug

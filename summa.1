@@ -1,0 +1,299 @@
+.\" Summa man page
+.TH SUMMA 1 "September 2024" "summa v0.0.1" "User Commands"
+.SH NAME
+summa \- parse and analyze time tracking logs
+.SH SYNOPSIS
+.B summa
+[\fIOPTIONS\fR] [\fIFILE\fR]
+.br
+.B summa
+\fB\-S\fR|\fB\-\-scan\fR \fIPATH\fR [\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B summa
+is a time tracking log parser that processes structured time entries with tags.
+It can parse individual files or scan entire directories for time log files,
+aggregate entries, and generate various summary reports.
+.PP
+Time entries follow the format:
+.RS
+HHMM\-HHMM [%NN] description #tag1 #tag2 ...
+.RE
+.PP
+Date headers use the format:
+.RS
+# YYYY\-MM\-DD
+.RE
+.SH OPTIONS
+.SS General Options
+.TP
+.BR \-h ", " \-\-help
+Display help message and exit.
+.TP
+.BR \-V ", " \-\-version
+Display version information and exit.
+.TP
+.BR \-v ", " \-\-verbose
+Enable verbose output for debugging.
+.SS Input Options
+.TP
+.BR \-S ", " \-\-scan " " \fIPATH\fR
+Scan directory or file at PATH for time log files.
+.TP
+.BR \-R ", " \-\-recursive
+Scan directories recursively (use with \-\-scan).
+.TP
+.B \-\-date\-from\-filename
+Extract dates from filenames when scanning (e.g., 2024\-01\-15.md).
+.TP
+.B \-\-date\-from\-path
+Extract dates from directory paths when scanning (e.g., /2024/01/15/log.txt).
+.TP
+.BR \-\-include " " \fIPATTERN\fR
+Include only files matching PATTERN when scanning.
+Can be specified multiple times.
+.TP
+.BR \-\-exclude " " \fIPATTERN\fR
+Exclude files matching PATTERN when scanning.
+Can be specified multiple times.
+.SS Output Formats
+.TP
+.BR \-f ", " \-\-format " " \fIFORMAT\fR
+Set output format. Valid formats are:
+.RS
+.IP \(bu 3
+\fBtext\fR \- Human-readable summary (default)
+.IP \(bu 3
+\fBcsv\fR \- Comma-separated values
+.IP \(bu 3
+\fBjson\fR \- JSON format
+.RE
+.SS Summary Options
+.TP
+.BR \-d ", " \-\-daily
+Show daily summary of time entries.
+.TP
+.BR \-w ", " \-\-weekly
+Show weekly summary of time entries.
+.TP
+.BR \-m ", " \-\-monthly
+Show monthly summary of time entries.
+.SS Filtering Options
+.TP
+.BR \-\-from " " \fIYYYY\-MM\-DD\fR
+Filter entries from this date onwards (inclusive).
+.TP
+.BR \-\-to " " \fIYYYY\-MM\-DD\fR
+Filter entries up to this date (inclusive).
+.TP
+.BR \-\-tag " " \fITAG\fR
+Filter entries by tag (without # prefix).
+.SH TIME ENTRY FORMAT
+Each time entry consists of:
+.TP
+.B Time span
+Format: HHMM\-HHMM (24-hour format)
+.br
+Example: 0900\-1030 (9:00 AM to 10:30 AM)
+.TP
+.B Single time
+Format: HHMM
+.br
+Example: 0900 (9:00 AM, no duration)
+.TP
+.B Percentage (optional)
+Format: %NN where NN is 0\-100
+.br
+Example: %75 (75% effort/focus)
+.TP
+.B Description
+Free text description of the activity
+.TP
+.B Tags
+Hashtag annotations for categorization
+.br
+Format: #tag
+.br
+Example: #meeting #urgent #project\-x
+.SH DATE HEADERS
+Date headers mark the date for subsequent entries:
+.PP
+.RS
+# YYYY\-MM\-DD
+.RE
+.PP
+All entries following a date header are associated with that date until
+another date header is encountered.
+.SH EXAMPLES
+.SS Basic Usage
+Parse a single log file:
+.PP
+.RS
+summa timesheet.md
+.RE
+.PP
+Parse from standard input:
+.PP
+.RS
+cat logs.txt | summa
+.RE
+.SS Directory Scanning
+Scan a directory for log files:
+.PP
+.RS
+summa \-\-scan ~/logs
+.RE
+.PP
+Recursive scan with date inference:
+.PP
+.RS
+summa \-S ~/notes \-R \-\-date\-from\-filename \-\-date\-from\-path
+.RE
+.PP
+Scan only markdown files:
+.PP
+.RS
+summa \-\-scan ~/logs \-\-include .md \-\-recursive
+.RE
+.SS Summary Reports
+Generate daily summary:
+.PP
+.RS
+summa \-\-daily timesheet.md
+.RE
+.PP
+Weekly summary for January:
+.PP
+.RS
+summa \-w \-\-from 2024\-01\-01 \-\-to 2024\-01\-31 logs.md
+.RE
+.PP
+Monthly summary in CSV format:
+.PP
+.RS
+summa \-m \-f csv timesheet.md > report.csv
+.RE
+.SS Filtering
+Filter by tag:
+.PP
+.RS
+summa \-\-tag meeting logs.md
+.RE
+.PP
+Filter by date range:
+.PP
+.RS
+summa \-\-from 2024\-01\-01 \-\-to 2024\-01\-31 logs.md
+.RE
+.PP
+Combine filters:
+.PP
+.RS
+summa \-\-tag urgent \-\-from 2024\-01\-01 \-d logs.md
+.RE
+.SH INPUT FILE FORMAT
+Example time log file:
+.PP
+.RS
+.nf
+# 2024\-01\-15
+
+0900\-0930 Morning standup #meeting #daily
+0930\-1100 Code review PR #1234 #review #dev
+1100\-1200 %80 Bug fix for issue #5678 #bugfix #urgent
+1400\-1600 Feature implementation #feature #dev
+
+# 2024\-01\-16
+
+0800\-0900 Email and planning #admin
+0900\-1130 Deep work session #focus #dev
+1300\-1500 Customer call #meeting #customer
+.fi
+.RE
+.SH OUTPUT FORMATS
+.SS Text Format (default)
+Provides a human-readable summary with:
+.IP \(bu 3
+Total entries and time
+.IP \(bu 3
+Time breakdown by tag
+.IP \(bu 3
+Daily/weekly/monthly summaries
+.SS CSV Format
+Outputs comma-separated values with headers:
+.IP \(bu 3
+Date,Start,End,Duration_Minutes,Description,Tags,Percentage
+.SS JSON Format
+Outputs structured JSON with:
+.IP \(bu 3
+Entries array with full details
+.IP \(bu 3
+Summary statistics
+.IP \(bu 3
+Tag aggregations
+.SH ENVIRONMENT
+.TP
+.B HOME
+Used for default installation directory ($HOME/bin)
+.SH FILES
+.TP
+.I ~/logs/
+Common directory for time log files
+.TP
+.I *.md, *.txt, *.log
+Common extensions for time log files
+.SH EXIT STATUS
+.TP
+.B 0
+Successful execution
+.TP
+.B 1
+Error in command line arguments or file processing
+.SH NOTES
+.SS Date Inference
+When scanning directories, summa can infer dates from:
+.IP 1. 4
+Date headers within files (# YYYY\-MM\-DD)
+.IP 2. 4
+Filenames (e.g., 2024\-01\-15.md, 20240115.txt)
+.IP 3. 4
+Directory paths (e.g., /2024/01/15/daily.log)
+.IP 4. 4
+File modification time (fallback)
+.SS Time Entry Detection
+Files must contain at least one valid time entry (HHMM\-HHMM format)
+to be recognized as time log files during scanning.
+.SS Tag Filtering
+When using \-\-tag for filtering, the # prefix is optional.
+Both "\-\-tag meeting" and "\-\-tag #meeting" are valid.
+.SH EXAMPLES OF COMPLEX USAGE
+Scan multiple directories with specific patterns:
+.PP
+.RS
+summa \-S ~/work \-R \-\-include .md \-\-exclude archive \-\-daily
+.RE
+.PP
+Generate a weekly report for all meetings in Q1:
+.PP
+.RS
+summa \-S ~/logs \-R \-\-from 2024\-01\-01 \-\-to 2024\-03\-31 \\
+      \-\-tag meeting \-\-weekly \-f csv > q1_meetings.csv
+.RE
+.PP
+Analyze productivity by combining filters:
+.PP
+.RS
+summa \-S ~/notes \-R \-\-date\-from\-filename \\
+      \-\-tag focus \-\-monthly \-\-from 2024\-01\-01
+.RE
+.SH BUGS
+Report bugs at: https://github.com/yourusername/summa/issues
+.SH AUTHOR
+Written by Your Name
+.SH COPYRIGHT
+Copyright (C) 2024 Your Name
+.br
+This is free software; see the source for copying conditions.
+.SH SEE ALSO
+.BR date (1),
+.BR cal (1),
+.BR at (1)

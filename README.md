@@ -59,25 +59,31 @@ HHMM-HHMM %75 Task with 75% effort #work
 ### Format Examples
 
 #### Basic Time Entry
+
 ```
 0900-1000 Team standup meeting
 ```
+
 - Time: 9:00 AM to 10:00 AM (1 hour)
 - Description: "Team standup meeting"
 - No tags or percentage
 
 #### Entry with Tags
+
 ```
 1000-1200 Feature development #coding #backend
 ```
+
 - Time: 10:00 AM to 12:00 PM (2 hours)
 - Description: "Feature development"
 - Tags: #coding, #backend
 
 #### Entry with Percentage (Billable/Effort)
+
 ```
 1300-1500 %80 Code review session #review
 ```
+
 - Time: 1:00 PM to 3:00 PM (2 hours)
 - Percentage: 80% (e.g., 80% billable or focused)
 - Description: "Code review session"
@@ -112,6 +118,7 @@ HHMM-HHMM %75 Task with 75% effort #work
 1500-1700 Development work #coding
 
 ---
+
 Notes: Client was happy with the presentation!
 TODO: Send follow-up email by Monday
 ```
@@ -198,19 +205,49 @@ summa -w -f json --tag meeting logfile.md > meetings.json
 summa -v logfile.md
 ```
 
+### Directory Scanning
+
+```bash
+# Scan a directory for time logs
+summa --scan ~/logs
+
+# Recursive scan with date inference
+summa -S ~/notes -R --date-from-filename --date-from-path
+
+# Scan only markdown files
+summa --scan ~/work --include .md --recursive
+
+# Generate weekly report from all logs in directory
+summa -S ~/logs -R -w --from 2024-01-01
+```
+
+## Documentation
+
+Full documentation is available via the man page:
+
+```bash
+man summa
+```
+
 ## Command-Line Options
 
-| Option | Long Form | Description |
-|--------|-----------|-------------|
-| `-h` | `--help` | Show help message |
-| `-f FORMAT` | `--format FORMAT` | Output format: text, csv, json (default: text) |
-| `-d` | `--daily` | Show daily summary |
-| `-w` | `--weekly` | Show weekly summary |
-| `-m` | `--monthly` | Show monthly summary |
-| `-v` | `--verbose` | Enable verbose output for debugging |
-| | `--from DATE` | Filter entries from DATE (YYYY-MM-DD) |
-| | `--to DATE` | Filter entries to DATE (YYYY-MM-DD) |
-| | `--tag TAG` | Filter entries by TAG (without #) |
+| Option      | Long Form              | Description                                    |
+| ----------- | ---------------------- | ---------------------------------------------- |
+| `-h`        | `--help`               | Show help message                              |
+| `-f FORMAT` | `--format FORMAT`      | Output format: text, csv, json (default: text) |
+| `-d`        | `--daily`              | Show daily summary                             |
+| `-w`        | `--weekly`             | Show weekly summary                            |
+| `-m`        | `--monthly`            | Show monthly summary                           |
+| `-v`        | `--verbose`            | Enable verbose output for debugging            |
+| `-S PATH`   | `--scan PATH`          | Scan directory/file for time logs              |
+| `-R`        | `--recursive`          | Scan directories recursively                   |
+|             | `--date-from-filename` | Extract dates from filenames                   |
+|             | `--date-from-path`     | Extract dates from directory paths             |
+|             | `--include PATTERN`    | Include only files matching pattern            |
+|             | `--exclude PATTERN`    | Exclude files matching pattern                 |
+|             | `--from DATE`          | Filter entries from DATE (YYYY-MM-DD)          |
+|             | `--to DATE`            | Filter entries to DATE (YYYY-MM-DD)            |
+|             | `--tag TAG`            | Filter entries by TAG (without #)              |
 
 ## Output Examples
 
@@ -346,6 +383,7 @@ A comprehensive system for automatically discovering and parsing time entries ac
 - **Performance**: Parallel processing and caching for efficient scanning of large directories
 
 Example usage:
+
 ```bash
 summa --scan-dir ~/notes --date-from-filename  # Scan with date extraction
 summa -S ~/work --recursive --parallel         # Fast recursive scan
@@ -389,3 +427,4 @@ SOFTWARE.
 ## Support
 
 For issues, questions, or suggestions, please [open an issue](https://github.com/jw4/summa/issues).
+
