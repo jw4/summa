@@ -23,6 +23,13 @@ typedef struct {
     int entry_count;
 } tag_summary_t;
 
+/* Daily summary structure */
+typedef struct {
+    date_t date;
+    int total_minutes;
+    int entry_count;
+} daily_summary_t;
+
 /* Global data */
 logfile_t *current_logfile = NULL;
 date_t current_date = {0, 0, 0};  /* Current date being processed */
@@ -334,6 +341,13 @@ int get_iso_week(int year, int month, int day) {
     return week;
 }
 
+/* Comparison function for sorting daily summaries by date */
+int compare_daily_summaries(const void *a, const void *b) {
+    const daily_summary_t *day_a = (const daily_summary_t *)a;
+    const daily_summary_t *day_b = (const daily_summary_t *)b;
+    return compare_dates((date_t *)&day_a->date, (date_t *)&day_b->date);
+}
+
 /* Print daily summary */
 void print_daily_summary(logfile_t *file) {
     if (file->count == 0) {
@@ -342,13 +356,6 @@ void print_daily_summary(logfile_t *file) {
     }
 
     printf("=== DAILY SUMMARY ===\n\n");
-
-    /* Structure to hold daily data */
-    typedef struct {
-        date_t date;
-        int total_minutes;
-        int entry_count;
-    } daily_summary_t;
 
     /* Dynamic array for daily summaries */
     int day_capacity = 10;
@@ -386,6 +393,9 @@ void print_daily_summary(logfile_t *file) {
         days[day_idx].total_minutes += entry->timespan.duration_minutes;
         days[day_idx].entry_count++;
     }
+
+    /* Sort daily summaries by date */
+    qsort(days, day_count, sizeof(daily_summary_t), compare_daily_summaries);
 
     /* Print daily summaries */
     int grand_total_minutes = 0;
