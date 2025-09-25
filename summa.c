@@ -417,9 +417,11 @@ void print_daily_summary(logfile_t *file) {
     printf("Total entries: %d\n", grand_total_entries);
     printf("Total time: %dh %02dm\n",
            grand_total_minutes / 60, grand_total_minutes % 60);
-    printf("Average per day: %dh %02dm\n",
-           (grand_total_minutes / day_count) / 60,
-           (grand_total_minutes / day_count) % 60);
+    if (day_count > 0) {
+        printf("Average per day: %dh %02dm\n",
+               (grand_total_minutes / day_count) / 60,
+               (grand_total_minutes / day_count) % 60);
+    }
 
     /* Free memory */
     free(days);
@@ -1367,8 +1369,6 @@ int main(int argc, char ** argv) {
         /* Process scan results */
         current_logfile = process_scan_results(scan_result, &scan_config);
 
-        free_scan_result(scan_result);
-
         /* Continue to display results */
         if (current_logfile && current_logfile->count > 0) {
             if (show_daily) {
@@ -1385,6 +1385,25 @@ int main(int argc, char ** argv) {
                 print_json(current_logfile);
             }
         }
+
+        /* Handle database import for scanned results if requested */
+        if (use_db && db_import && current_logfile && current_logfile->count > 0) {
+            summa_db_t *db = db_open(db_path);
+            if (db) {
+                printf("Importing %d scanned entries to database...\n", current_logfile->count);
+                if (db_import_scan_results(db, scan_result)) {
+                    printf("Successfully imported %d entries from %d files\n",
+                           current_logfile->count, scan_result->file_count);
+                } else {
+                    fprintf(stderr, "Failed to import scanned entries\n");
+                }
+                db_close(db);
+            } else {
+                fprintf(stderr, "Error: Failed to open database for scan import\n");
+            }
+        }
+
+        free_scan_result(scan_result);
 
         free_logfile(current_logfile);
         return 0;
@@ -1458,6 +1477,8 @@ int main(int argc, char ** argv) {
                 fprintf(stderr, "Failed to import entries\n");
             }
             db_close(db);
+        } else {
+            fprintf(stderr, "Error: Failed to open database for import\n");
         }
     }
 

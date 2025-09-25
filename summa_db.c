@@ -8,12 +8,14 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 #include <wordexp.h>
 #include "summa_db.h"
 
 /* External functions from summa.c */
 extern logfile_t* create_logfile(void);
 extern void add_entry(logfile_t *file, logline_t *entry);
+extern bool verbose;  /* Verbose mode flag from summa.c */
 
 /* SQL statements for schema creation */
 static const char *schema_sql =
@@ -63,10 +65,59 @@ static const char *schema_sql =
     "CREATE INDEX IF NOT EXISTS idx_entry_tags_entry ON entry_tags(entry_id);"
     "CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag_id);";
 
+/* Create directory recursively */
+static int mkdir_recursive(const char *path, mode_t mode) {
+    char *path_copy = strdup(path);
+    if (!path_copy) return -1;
+
+    char *p = path_copy;
+
+    /* Skip leading slash */
+    if (*p == '/') p++;
+
+    /* Create each directory in the path */
+    while (*p) {
+        /* Find next directory separator */
+        while (*p && *p != '/') p++;
+
+        /* Temporarily terminate string */
+        char c = *p;
+        *p = '\0';
+
+        /* Try to create directory */
+        if (mkdir(path_copy, mode) != 0 && errno != EEXIST) {
+            free(path_copy);
+            return -1;
+        }
+
+        /* Restore character and continue */
+        *p = c;
+        if (*p) p++;
+    }
+
+    free(path_copy);
+    return 0;
+}
+
 /* Expand ~ in path */
 char* db_expand_path(const char *path) {
-    if (!path || path[0] != '~') {
-        return strdup(path);
+    if (!path) {
+        if (verbose) {
+            fprintf(stderr, "Error: NULL path provided to db_expand_path\n");
+        }
+        return NULL;
+    }
+
+    if (verbose) {
+        fprintf(stderr, "Debug: Expanding path: %s\n", path);
+    }
+
+    if (path[0] != '~') {
+        char *result = strdup(path);
+        if (verbose) {
+            fprintf(stderr, "Debug: Path already absolute: %s\n", result);
+        }
+        return result;
     }
 
     wordexp_t exp;
@@ -75,6 +126,9 @@ char* db_expand_path(const char *path) {
     if (wordexp(path, &exp, 0) == 0 && exp.we_wordc > 0) {
         expanded = strdup(exp.we_wordv[0]);
         wordfree(&exp);
+        if (verbose) {
+            fprintf(stderr, "Debug: Expanded path using wordexp: %s\n", expanded);
+        }
     } else {
         /* Fallback to manual expansion */
         const char *home = getenv("HOME");
@@ -82,8 +136,14 @@ char* db_expand_path(const char *path) {
             size_t len = strlen(home) + strlen(path);
             expanded = malloc(len);
             snprintf(expanded, len, "%s%s", home, path + 1);
+            if (verbose) {
+                fprintf(stderr, "Debug: Expanded path manually: %s\n", expanded);
+            }
         } else {
             expanded = strdup(path);
+            if (verbose) {
+                fprintf(stderr, "Debug: Could not expand path, HOME not set: %s\n", expanded);
+            }
         }
     }
 
@@ -99,12 +159,24 @@ summa_db_t* db_open(const char *path) {
     const char *db_path = path ? path : DEFAULT_DB_PATH;
     db->path = db_expand_path(db_path);
 
+    if (!db->path) {
+        fprintf(stderr, "Error: Failed to expand database path\n");
+        free(db);
+        return NULL;
+    }
+
     /* Create directory if needed */
     char *dir = strdup(db->path);
     char *last_slash = strrchr(dir, '/');
     if (last_slash) {
         *last_slash = '\0';
-        mkdir(dir, 0755);  /* Create directory, ignore if exists */
+        if (mkdir_recursive(dir, 0755) != 0) {
+            fprintf(stderr, "Error creating directory %s: %s\n", dir, strerror(errno));
+            free(dir);
+            free(db->path);
+            free(db);
+            return NULL;
+        }
     }
     free(dir);
 
@@ -122,11 +194,24 @@ summa_db_t* db_open(const char *path) {
     sqlite3_exec(db->db, "PRAGMA foreign_keys = ON", NULL, NULL, NULL);
 
     /* Initialize schema if needed */
+    if (verbose) {
+        fprintf(stderr, "Debug: Checking database schema at %s\n", db->path);
+    }
+
     if (!db_check_schema(db)) {
+        if (verbose) {
+            fprintf(stderr, "Debug: Schema not found or outdated, initializing...\n");
+        }
         if (!db_init_schema(db)) {
+            fprintf(stderr, "Error: Failed to initialize database schema\n");
             db_close(db);
             return NULL;
         }
+        if (verbose) {
+            fprintf(stderr, "Debug: Database schema initialized successfully\n");
+        }
+    } else if (verbose) {
+        fprintf(stderr, "Debug: Database schema is current\n");
     }
 
     return db;
@@ -187,6 +272,10 @@ bool db_check_schema(summa_db_t *db) {
 
     int rc = sqlite3_prepare_v2(db->db, check_sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
+        if (verbose) {
+            fprintf(stderr, "Debug: Schema check failed, metadata table doesn't exist: %s\n",
+                   sqlite3_errmsg(db->db));
+        }
         return false;  /* Table doesn't exist */
     }
 
@@ -348,6 +437,33 @@ bool db_import_entry(summa_db_t *db, const char *filepath, logline_t *entry) {
     snprintf(end_str, sizeof(end_str), "%02d:%02d",
              entry->timespan.end.hour, entry->timespan.end.minute);
 
+    /* Check for duplicate entry */
+    const char *check_sql =
+        "SELECT id FROM entries WHERE file_id = ? AND date = ? AND start_time = ? "
+        "AND end_time = ? AND duration_minutes = ? AND (description = ? OR (description IS NULL AND ? IS NULL))";
+
+    rc = sqlite3_prepare_v2(db->db, check_sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) return false;
+
+    sqlite3_bind_int(stmt, 1, file_id);
+    sqlite3_bind_text(stmt, 2, date_str, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, start_str, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, end_str, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 5, entry->timespan.duration_minutes);
+    sqlite3_bind_text(stmt, 6, entry->description, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 7, entry->description, -1, SQLITE_STATIC);
+
+    bool duplicate_found = (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+
+    if (duplicate_found) {
+        if (verbose) {
+            fprintf(stderr, "Debug: Skipping duplicate entry: %s %s-%s\n",
+                   date_str, start_str, end_str);
+        }
+        return true;  /* Not an error, just skipped */
+    }
+
     /* Insert entry */
     const char *entry_sql =
         "INSERT INTO entries (file_id, date, start_time, end_time, "
@@ -431,6 +547,72 @@ bool db_import_file(summa_db_t *db, const char *filepath, logfile_t *logfile) {
     return success;
 }
 
+/* Import scan results */
+bool db_import_scan_results(summa_db_t *db, scan_result_t *results) {
+    if (!db || !results) return false;
+
+    bool success = true;
+    db_begin_transaction(db);
+
+    /* Process each scanned file */
+    file_info_t *file_info = results->files;
+    while (file_info && success) {
+        if (file_info->has_time_entries) {
+            /* Parse the file and import its entries */
+            FILE *fp = fopen(file_info->path, "r");
+            if (fp) {
+                logfile_t *temp_logfile = create_logfile();
+
+                /* Save current globals for parsing */
+                extern logfile_t *current_logfile;
+                extern date_t current_date;
+                logfile_t *saved_logfile = current_logfile;
+                date_t saved_date = current_date;
+
+                /* Set up parsing context */
+                current_logfile = temp_logfile;
+                current_date = file_info->inferred_date;
+
+                /* Parse the file */
+                extern int parse_two_phase(FILE* input);
+                if (parse_two_phase(fp) == 0 && temp_logfile->count > 0) {
+                    /* Import all entries from this file */
+                    for (int i = 0; i < temp_logfile->count; i++) {
+                        if (!db_import_entry(db, file_info->path, temp_logfile->entries[i])) {
+                            success = false;
+                            break;
+                        }
+                    }
+                } else {
+                    if (verbose) {
+                        fprintf(stderr, "Debug: Failed to parse or no entries in %s\n", file_info->path);
+                    }
+                }
+
+                /* Restore globals */
+                current_logfile = saved_logfile;
+                current_date = saved_date;
+
+                /* Clean up */
+                extern void free_logfile(logfile_t *file);
+                free_logfile(temp_logfile);
+                fclose(fp);
+            } else if (verbose) {
+                fprintf(stderr, "Warning: Could not open file %s for import\n", file_info->path);
+            }
+        }
+        file_info = file_info->next;
+    }
+
+    if (success) {
+        db_commit_transaction(db);
+    } else {
+        db_rollback_transaction(db);
+    }
+
+    return success;
+}
+
 /* Query entries by date range */
 logfile_t* db_query_by_date_range(summa_db_t *db, date_t from, date_t to) {
     if (!db || !db->db) return NULL;
@@ -463,18 +645,33 @@ logfile_t* db_query_by_date_range(summa_db_t *db, date_t from, date_t to) {
 
         /* Parse date */
         const char *date_str = (const char *)sqlite3_column_text(stmt, 1);
-        sscanf(date_str, "%d-%d-%d",
-               &entry.date.year, &entry.date.month, &entry.date.day);
+        if (date_str) {
+            sscanf(date_str, "%d-%d-%d",
+                   &entry.date.year, &entry.date.month, &entry.date.day);
+        } else {
+            /* Set default date if NULL */
+            entry.date.year = 1900; entry.date.month = 1; entry.date.day = 1;
+        }
 
         /* Parse times */
         const char *start_str = (const char *)sqlite3_column_text(stmt, 2);
-        sscanf(start_str, "%d:%d", &entry.timespan.start.hour, &entry.timespan.start.minute);
+        if (start_str) {
+            sscanf(start_str, "%d:%d", &entry.timespan.start.hour, &entry.timespan.start.minute);
+        } else {
+            entry.timespan.start.hour = 0; entry.timespan.start.minute = 0;
+        }
 
         const char *end_str = (const char *)sqlite3_column_text(stmt, 3);
-        sscanf(end_str, "%d:%d", &entry.timespan.end.hour, &entry.timespan.end.minute);
+        if (end_str) {
+            sscanf(end_str, "%d:%d", &entry.timespan.end.hour, &entry.timespan.end.minute);
+        } else {
+            entry.timespan.end.hour = 0; entry.timespan.end.minute = 0;
+        }
 
         entry.timespan.duration_minutes = sqlite3_column_int(stmt, 4);
-        entry.description = strdup((const char *)sqlite3_column_text(stmt, 5));
+        /* Handle NULL description safely */
+        const char *desc = (const char *)sqlite3_column_text(stmt, 5);
+        entry.description = desc ? strdup(desc) : NULL;
         entry.percentage = sqlite3_column_int(stmt, 6);
 
         int entry_id = sqlite3_column_int(stmt, 0);
@@ -498,10 +695,22 @@ logfile_t* db_query_by_date_range(summa_db_t *db, date_t from, date_t to) {
                     tags->tags = malloc(10 * sizeof(char*));
                     tags->count = 0;
                     tags->capacity = 10;
+                    tags->capacity = 10;
                 }
 
                 const char *tag_name = (const char *)sqlite3_column_text(tag_stmt, 0);
-                tags->tags[tags->count++] = strdup(tag_name);
+                if (tag_name) {
+                    /* Check if we need to expand the array */
+                    if (tags->count >= tags->capacity) {
+                        tags->capacity *= 2;
+                        tags->tags = realloc(tags->tags, tags->capacity * sizeof(char*));
+                        if (!tags->tags) {
+                            /* Memory allocation failed - skip this tag */
+                            break;
+                        }
+                    }
+                    tags->tags[tags->count++] = strdup(tag_name);
+                }
             }
 
             entry.tags = tags;
@@ -545,18 +754,33 @@ logfile_t* db_query_by_tag(summa_db_t *db, const char *tag) {
 
         /* Parse date */
         const char *date_str = (const char *)sqlite3_column_text(stmt, 1);
-        sscanf(date_str, "%d-%d-%d",
-               &entry.date.year, &entry.date.month, &entry.date.day);
+        if (date_str) {
+            sscanf(date_str, "%d-%d-%d",
+                   &entry.date.year, &entry.date.month, &entry.date.day);
+        } else {
+            /* Set default date if NULL */
+            entry.date.year = 1900; entry.date.month = 1; entry.date.day = 1;
+        }
 
         /* Parse times */
         const char *start_str = (const char *)sqlite3_column_text(stmt, 2);
-        sscanf(start_str, "%d:%d", &entry.timespan.start.hour, &entry.timespan.start.minute);
+        if (start_str) {
+            sscanf(start_str, "%d:%d", &entry.timespan.start.hour, &entry.timespan.start.minute);
+        } else {
+            entry.timespan.start.hour = 0; entry.timespan.start.minute = 0;
+        }
 
         const char *end_str = (const char *)sqlite3_column_text(stmt, 3);
-        sscanf(end_str, "%d:%d", &entry.timespan.end.hour, &entry.timespan.end.minute);
+        if (end_str) {
+            sscanf(end_str, "%d:%d", &entry.timespan.end.hour, &entry.timespan.end.minute);
+        } else {
+            entry.timespan.end.hour = 0; entry.timespan.end.minute = 0;
+        }
 
         entry.timespan.duration_minutes = sqlite3_column_int(stmt, 4);
-        entry.description = strdup((const char *)sqlite3_column_text(stmt, 5));
+        /* Handle NULL description safely */
+        const char *desc = (const char *)sqlite3_column_text(stmt, 5);
+        entry.description = desc ? strdup(desc) : NULL;
         entry.percentage = sqlite3_column_int(stmt, 6);
 
         int entry_id = sqlite3_column_int(stmt, 0);
@@ -580,10 +804,22 @@ logfile_t* db_query_by_tag(summa_db_t *db, const char *tag) {
                     tags->tags = malloc(10 * sizeof(char*));
                     tags->count = 0;
                     tags->capacity = 10;
+                    tags->capacity = 10;
                 }
 
                 const char *tag_name = (const char *)sqlite3_column_text(tag_stmt, 0);
-                tags->tags[tags->count++] = strdup(tag_name);
+                if (tag_name) {
+                    /* Check if we need to expand the array */
+                    if (tags->count >= tags->capacity) {
+                        tags->capacity *= 2;
+                        tags->tags = realloc(tags->tags, tags->capacity * sizeof(char*));
+                        if (!tags->tags) {
+                            /* Memory allocation failed - skip this tag */
+                            break;
+                        }
+                    }
+                    tags->tags[tags->count++] = strdup(tag_name);
+                }
             }
 
             entry.tags = tags;
