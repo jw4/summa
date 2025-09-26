@@ -34,6 +34,7 @@ static bool should_process_file(const char *path, scan_config_t *config);
 static void scan_directory_recursive(const char *path, scan_result_t *result,
                                     scan_config_t *config, int depth);
 static file_info_t* analyze_file(const char *path, scan_config_t *config);
+static bool validate_path(const char *path, char *validated_path, size_t max_len);
 
 /* Check if file is likely a text file */
 static bool is_text_file(const char *path) {
@@ -320,17 +321,26 @@ static void scan_directory_recursive(const char *path, scan_result_t *result,
         char full_path[PATH_MAX];
         snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
 
+        /* Validate the constructed path */
+        char validated_full_path[PATH_MAX];
+        if (!validate_path(full_path, validated_full_path, sizeof(validated_full_path))) {
+            if (config->verbose) {
+                fprintf(stderr, "Warning: Skipping invalid path: %s\n", full_path);
+            }
+            continue;
+        }
+
         struct stat st;
-        if (stat(full_path, &st) != 0) continue;
+        if (stat(validated_full_path, &st) != 0) continue;
 
         if (S_ISDIR(st.st_mode)) {
             /* Recurse into directory */
-            scan_directory_recursive(full_path, result, config, depth + 1);
+            scan_directory_recursive(validated_full_path, result, config, depth + 1);
         } else {
             /* Process file */
-            if (!should_process_file(full_path, config)) continue;
+            if (!should_process_file(validated_full_path, config)) continue;
 
-            file_info_t *info = analyze_file(full_path, config);
+            file_info_t *info = analyze_file(validated_full_path, config);
             if (info) {
                 /* Add to results */
                 info->next = result->files;
@@ -345,7 +355,7 @@ static void scan_directory_recursive(const char *path, scan_result_t *result,
                 }
 
                 if (config->verbose) {
-                    printf("Found: %s (%d entries", full_path, info->entry_count);
+                    printf("Found: %s (%d entries", validated_full_path, info->entry_count);
                     if (!info->has_date_headers && info->date_source != DATE_SOURCE_NONE) {
                         printf(", date from %s: %04d-%02d-%02d",
                                info->date_source == DATE_SOURCE_FILENAME ? "filename" :
@@ -363,24 +373,64 @@ static void scan_directory_recursive(const char *path, scan_result_t *result,
     closedir(dir);
 }
 
+/* Validate and canonicalize a path to prevent directory traversal attacks */
+static bool validate_path(const char *path, char *validated_path, size_t max_len) {
+    if (!path || !validated_path || max_len == 0) return false;
+
+    /* Use realpath to resolve symbolic links and normalize the path */
+    char *canonical = realpath(path, NULL);
+    if (!canonical) {
+        /* Path doesn't exist or is inaccessible */
+        return false;
+    }
+
+    /* Check if the canonical path fits in our buffer */
+    size_t len = strlen(canonical);
+    if (len >= max_len) {
+        free(canonical);
+        return false;
+    }
+
+    /* Check for dangerous patterns that shouldn't appear in canonical paths */
+    if (strstr(canonical, "/../") != NULL ||
+        strstr(canonical, "/./") != NULL ||
+        (len >= 3 && strcmp(canonical + len - 3, "/..") == 0) ||
+        (len >= 2 && strcmp(canonical + len - 2, "/.") == 0)) {
+        free(canonical);
+        return false;
+    }
+
+    /* Copy the validated path */
+    strcpy(validated_path, canonical);
+    free(canonical);
+    return true;
+}
+
 /* Main scan function */
 scan_result_t* scan_directory(const char *path, scan_config_t *config) {
     scan_result_t *result = calloc(1, sizeof(scan_result_t));
 
-    /* Check if path exists */
+    /* Check if path exists first (preserves original error message) */
     struct stat st;
     if (stat(path, &st) != 0) {
         fprintf(stderr, "Error: Path does not exist: %s\n", path);
         return result;
     }
 
+    /* Then validate and canonicalize the path for security */
+    char validated_path[PATH_MAX];
+    if (!validate_path(path, validated_path, sizeof(validated_path))) {
+        fprintf(stderr, "Error: Invalid or unsafe path: %s\n", path);
+        return result;
+    }
+
     if (S_ISDIR(st.st_mode)) {
         /* Scan directory */
-        scan_directory_recursive(path, result, config, 0);
+        scan_directory_recursive(validated_path, result, config, 0);
     } else {
         /* Single file */
-        if (should_process_file(path, config)) {
-            file_info_t *info = analyze_file(path, config);
+        if (should_process_file(validated_path, config)) {
+            file_info_t *info = analyze_file(validated_path, config);
             if (info) {
                 result->files = info;
                 result->file_count = 1;

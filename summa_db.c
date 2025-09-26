@@ -8,6 +8,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <limits.h>
 #include <errno.h>
 #include <wordexp.h>
 #include "summa_db.h"
@@ -133,8 +134,14 @@ char* db_expand_path(const char *path) {
         /* Fallback to manual expansion */
         const char *home = getenv("HOME");
         if (home) {
-            size_t len = strlen(home) + strlen(path);
+            size_t len = strlen(home) + strlen(path) + 1;  /* +1 for null terminator */
             expanded = malloc(len);
+            if (!expanded) {
+                if (verbose) {
+                    fprintf(stderr, "Debug: Failed to allocate memory for path expansion\n");
+                }
+                return NULL;
+            }
             snprintf(expanded, len, "%s%s", home, path + 1);
             if (verbose) {
                 fprintf(stderr, "Debug: Expanded path manually: %s\n", expanded);
@@ -702,12 +709,17 @@ logfile_t* db_query_by_date_range(summa_db_t *db, date_t from, date_t to) {
                 if (tag_name) {
                     /* Check if we need to expand the array */
                     if (tags->count >= tags->capacity) {
+                        /* Check for integer overflow before doubling capacity */
+                        if (tags->capacity > INT_MAX / 2) {
+                            break;  /* Cannot expand further */
+                        }
                         tags->capacity *= 2;
-                        tags->tags = realloc(tags->tags, tags->capacity * sizeof(char*));
-                        if (!tags->tags) {
+                        char **new_tags = realloc(tags->tags, tags->capacity * sizeof(char*));
+                        if (!new_tags) {
                             /* Memory allocation failed - skip this tag */
                             break;
                         }
+                        tags->tags = new_tags;
                     }
                     tags->tags[tags->count++] = strdup(tag_name);
                 }
@@ -811,12 +823,17 @@ logfile_t* db_query_by_tag(summa_db_t *db, const char *tag) {
                 if (tag_name) {
                     /* Check if we need to expand the array */
                     if (tags->count >= tags->capacity) {
+                        /* Check for integer overflow before doubling capacity */
+                        if (tags->capacity > INT_MAX / 2) {
+                            break;  /* Cannot expand further */
+                        }
                         tags->capacity *= 2;
-                        tags->tags = realloc(tags->tags, tags->capacity * sizeof(char*));
-                        if (!tags->tags) {
+                        char **new_tags = realloc(tags->tags, tags->capacity * sizeof(char*));
+                        if (!new_tags) {
                             /* Memory allocation failed - skip this tag */
                             break;
                         }
+                        tags->tags = new_tags;
                     }
                     tags->tags[tags->count++] = strdup(tag_name);
                 }

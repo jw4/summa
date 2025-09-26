@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <time.h>
+#include <limits.h>
 #include "summa.h"
 #include "summa_scan.h"
 #include "summa_db.h"
@@ -114,8 +115,19 @@ void add_tag(taglist_t *list, const char *tag) {
     if (!list || !tag) return;
 
     if (list->count >= list->capacity) {
+        /* Check for integer overflow before doubling capacity */
+        if (list->capacity > INT_MAX / 2) {
+            fprintf(stderr, "Error: Tag list capacity overflow\n");
+            return;
+        }
         list->capacity *= 2;
-        list->tags = realloc(list->tags, sizeof(char*) * list->capacity);
+        char **new_tags = realloc(list->tags, sizeof(char*) * list->capacity);
+        if (!new_tags) {
+            /* Memory allocation failed - keep original tags */
+            fprintf(stderr, "Error: Failed to expand tag list\n");
+            return;
+        }
+        list->tags = new_tags;
     }
 
     list->tags[list->count++] = strdup(tag);
@@ -126,8 +138,19 @@ void add_entry(logfile_t *file, logline_t *entry) {
     if (!file || !entry) return;
 
     if (file->count >= file->capacity) {
+        /* Check for integer overflow before doubling capacity */
+        if (file->capacity > INT_MAX / 2) {
+            fprintf(stderr, "Error: Logfile capacity overflow\n");
+            return;
+        }
         file->capacity *= 2;
-        file->entries = realloc(file->entries, sizeof(logline_t*) * file->capacity);
+        logline_t **new_entries = realloc(file->entries, sizeof(logline_t*) * file->capacity);
+        if (!new_entries) {
+            /* Memory allocation failed - keep original entries */
+            fprintf(stderr, "Error: Failed to expand logfile entries\n");
+            return;
+        }
+        file->entries = new_entries;
     }
 
     file->entries[file->count++] = entry;
@@ -281,8 +304,18 @@ void print_summary(logfile_t *file) {
                 if (tag_idx == -1) {
                     /* New tag - check if we need to grow the array */
                     if (tag_count >= summary_capacity) {
+                        /* Check for integer overflow before doubling capacity */
+                        if (summary_capacity > INT_MAX / 2) {
+                            fprintf(stderr, "Error: Tag summary capacity overflow\n");
+                            break;
+                        }
                         summary_capacity *= 2;
-                        summaries = realloc(summaries, sizeof(tag_summary_t) * summary_capacity);
+                        tag_summary_t *new_summaries = realloc(summaries, sizeof(tag_summary_t) * summary_capacity);
+                        if (!new_summaries) {
+                            fprintf(stderr, "Error: Failed to expand tag summaries\n");
+                            break;  /* Skip this tag */
+                        }
+                        summaries = new_summaries;
                     }
 
                     tag_idx = tag_count++;
@@ -380,8 +413,18 @@ void print_daily_summary(logfile_t *file) {
         if (day_idx == -1) {
             /* New day - check if we need to grow array */
             if (day_count >= day_capacity) {
+                /* Check for integer overflow before doubling capacity */
+                if (day_capacity > INT_MAX / 2) {
+                    fprintf(stderr, "Error: Daily summary capacity overflow\n");
+                    break;
+                }
                 day_capacity *= 2;
-                days = realloc(days, sizeof(daily_summary_t) * day_capacity);
+                daily_summary_t *new_days = realloc(days, sizeof(daily_summary_t) * day_capacity);
+                if (!new_days) {
+                    fprintf(stderr, "Error: Failed to expand daily summaries\n");
+                    break;  /* Skip this day */
+                }
+                days = new_days;
             }
 
             day_idx = day_count++;
@@ -468,8 +511,18 @@ void print_weekly_summary(logfile_t *file) {
         if (week_idx == -1) {
             /* New week - check if we need to grow array */
             if (week_count >= week_capacity) {
+                /* Check for integer overflow before doubling capacity */
+                if (week_capacity > INT_MAX / 2) {
+                    fprintf(stderr, "Error: Weekly summary capacity overflow\n");
+                    break;
+                }
                 week_capacity *= 2;
-                weeks = realloc(weeks, sizeof(weekly_summary_t) * week_capacity);
+                weekly_summary_t *new_weeks = realloc(weeks, sizeof(weekly_summary_t) * week_capacity);
+                if (!new_weeks) {
+                    fprintf(stderr, "Error: Failed to expand weekly summaries\n");
+                    break;  /* Skip this week */
+                }
+                weeks = new_weeks;
             }
 
             week_idx = week_count++;
@@ -575,8 +628,18 @@ void print_monthly_summary(logfile_t *file) {
         if (month_idx == -1) {
             /* New month - check if we need to grow array */
             if (month_count >= month_capacity) {
+                /* Check for integer overflow before doubling capacity */
+                if (month_capacity > INT_MAX / 2) {
+                    fprintf(stderr, "Error: Monthly summary capacity overflow\n");
+                    break;
+                }
                 month_capacity *= 2;
-                months = realloc(months, sizeof(monthly_summary_t) * month_capacity);
+                monthly_summary_t *new_months = realloc(months, sizeof(monthly_summary_t) * month_capacity);
+                if (!new_months) {
+                    fprintf(stderr, "Error: Failed to expand monthly summaries\n");
+                    break;  /* Skip this month */
+                }
+                months = new_months;
             }
 
             month_idx = month_count++;
@@ -603,8 +666,18 @@ void print_monthly_summary(logfile_t *file) {
 
         if (!day_exists) {
             if (day_tracker_count >= day_tracker_capacity) {
+                /* Check for integer overflow before doubling capacity */
+                if (day_tracker_capacity > INT_MAX / 2) {
+                    fprintf(stderr, "Error: Day tracker capacity overflow\n");
+                    break;
+                }
                 day_tracker_capacity *= 2;
-                day_tracker = realloc(day_tracker, sizeof(day_tracker_t) * day_tracker_capacity);
+                day_tracker_t *new_day_tracker = realloc(day_tracker, sizeof(day_tracker_t) * day_tracker_capacity);
+                if (!new_day_tracker) {
+                    fprintf(stderr, "Error: Failed to expand day tracker\n");
+                    break;  /* Skip this day */
+                }
+                day_tracker = new_day_tracker;
             }
             day_tracker[day_tracker_count].year = entry->date.year;
             day_tracker[day_tracker_count].month = entry->date.month;
@@ -1190,15 +1263,25 @@ int main(int argc, char ** argv) {
             case 2003: /* --include */
                 /* Add include pattern */
                 scan_config.include_count++;
-                scan_config.include_patterns = realloc(scan_config.include_patterns,
-                                                      scan_config.include_count * sizeof(char*));
+                char **new_include_patterns = realloc(scan_config.include_patterns,
+                                                     scan_config.include_count * sizeof(char*));
+                if (!new_include_patterns) {
+                    fprintf(stderr, "Error: Failed to expand include patterns\n");
+                    return 1;
+                }
+                scan_config.include_patterns = new_include_patterns;
                 scan_config.include_patterns[scan_config.include_count - 1] = strdup(optarg);
                 break;
             case 2004: /* --exclude */
                 /* Add exclude pattern */
                 scan_config.exclude_count++;
-                scan_config.exclude_patterns = realloc(scan_config.exclude_patterns,
-                                                      scan_config.exclude_count * sizeof(char*));
+                char **new_exclude_patterns = realloc(scan_config.exclude_patterns,
+                                                     scan_config.exclude_count * sizeof(char*));
+                if (!new_exclude_patterns) {
+                    fprintf(stderr, "Error: Failed to expand exclude patterns\n");
+                    return 1;
+                }
+                scan_config.exclude_patterns = new_exclude_patterns;
                 scan_config.exclude_patterns[scan_config.exclude_count - 1] = strdup(optarg);
                 break;
             case 1001: /* --from */
