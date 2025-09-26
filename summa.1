@@ -87,6 +87,19 @@ Filter entries up to this date (inclusive).
 .TP
 .BR \-\-tag " " \fITAG\fR
 Filter entries by tag (without # prefix).
+.TP
+.BR \-\-sort\-tags " " \fIMETHOD\fR
+Sort tags in summary by method. Valid methods are:
+.RS
+.IP \(bu 3
+\fBalpha\fR or \fBalphabetical\fR \- Sort alphabetically (default)
+.IP \(bu 3
+\fBtime\fR \- Sort by total time spent (highest first)
+.IP \(bu 3
+\fBcount\fR \- Sort by entry count (most frequent first)
+.RE
+.IP
+When values are equal, tags fall back to alphabetical order.
 .SS Database Options
 .TP
 .BR \-\-db " " \fI[PATH]\fR
@@ -209,6 +222,24 @@ Combine filters:
 .PP
 .RS
 summa \-\-tag urgent \-\-from 2024\-01\-01 \-d logs.md
+.RE
+.SS Tag Sorting Examples
+Sort tags by total time (highest first):
+.PP
+.RS
+summa \-\-sort\-tags time logs.md
+.RE
+.PP
+Sort tags by entry count:
+.PP
+.RS
+summa \-\-sort\-tags count logs.md
+.RE
+.PP
+Combine with other options:
+.PP
+.RS
+summa \-d \-\-sort\-tags time \-\-from 2024\-01\-01 logs.md
 .RE
 .SS Database Examples
 Import entries to database:

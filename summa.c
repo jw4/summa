@@ -55,6 +55,13 @@ typedef enum {
     FORMAT_JSON
 } output_format_t;
 
+/* Tag sorting enum */
+typedef enum {
+    SORT_ALPHA,      /* Alphabetical (default) */
+    SORT_TIME,       /* By total time (descending) */
+    SORT_COUNT       /* By entry count (descending) */
+} tag_sort_t;
+
 /* Function declarations */
 logfile_t* create_logfile(void);
 logline_t* create_logline(void);
@@ -66,7 +73,7 @@ int calculate_duration(summa_time_t *start, summa_time_t *end);
 void free_logfile(logfile_t *file);
 void free_logline(logline_t *entry);
 void free_taglist(taglist_t *list);
-void print_summary(logfile_t *file);
+void print_summary(logfile_t *file, tag_sort_t sort_mode);
 void print_daily_summary(logfile_t *file);
 void print_weekly_summary(logfile_t *file);
 void print_monthly_summary(logfile_t *file);
@@ -82,6 +89,11 @@ logline_t* parse_time_line(const char* line, int line_number);
 int parse_two_phase(FILE* input);
 int compare_dates(date_t *d1, date_t *d2);
 bool entry_passes_filters(logline_t *entry);
+
+/* Tag sorting comparison functions */
+int compare_tags_alphabetical(const void *a, const void *b);
+int compare_tags_by_time(const void *a, const void *b);
+int compare_tags_by_count(const void *a, const void *b);
 
 /* Implementation */
 
@@ -243,7 +255,6 @@ void print_usage(const char *progname) {
     printf("  -h, --help          Show this help message\n");
     printf("  -V, --version       Show version information\n");
     printf("  -f, --format FORMAT Output format (text, csv, json) [default: text]\n");
-    printf("  -t, --tags          Show tag summary\n");
     printf("  -d, --daily         Show daily summary\n");
     printf("  -w, --weekly        Show weekly summary\n");
     printf("  -m, --monthly       Show monthly summary\n");
@@ -251,6 +262,7 @@ void print_usage(const char *progname) {
     printf("  --from DATE         Filter entries from DATE (YYYY-MM-DD)\n");
     printf("  --to DATE           Filter entries to DATE (YYYY-MM-DD)\n");
     printf("  --tag TAG           Filter entries by TAG (without #)\n");
+    printf("  --sort-tags METHOD  Sort tags by: alpha, time, count [default: alpha]\n");
     printf("\n");
     printf("Directory scanning:\n");
     printf("  -S, --scan PATH     Scan directory for time log files\n");
@@ -271,7 +283,7 @@ void print_usage(const char *progname) {
 }
 
 /* Print text summary */
-void print_summary(logfile_t *file) {
+void print_summary(logfile_t *file, tag_sort_t sort_mode) {
     if (!file || file->count == 0) return;
 
     printf("=== TIME LOG SUMMARY ===\n");
@@ -328,6 +340,20 @@ void print_summary(logfile_t *file) {
                 summaries[tag_idx].entry_count++;
             }
         }
+    }
+
+    /* Sort tag summaries based on sort mode */
+    switch (sort_mode) {
+        case SORT_TIME:
+            qsort(summaries, tag_count, sizeof(tag_summary_t), compare_tags_by_time);
+            break;
+        case SORT_COUNT:
+            qsort(summaries, tag_count, sizeof(tag_summary_t), compare_tags_by_count);
+            break;
+        case SORT_ALPHA:
+        default:
+            qsort(summaries, tag_count, sizeof(tag_summary_t), compare_tags_alphabetical);
+            break;
     }
 
     printf("Time by tag:\n");
@@ -898,6 +924,37 @@ int compare_dates(date_t *d1, date_t *d2) {
     return 0;
 }
 
+/* Compare tag summaries alphabetically by tag name */
+int compare_tags_alphabetical(const void *a, const void *b) {
+    const tag_summary_t *tag_a = (const tag_summary_t *)a;
+    const tag_summary_t *tag_b = (const tag_summary_t *)b;
+    return strcmp(tag_a->tag, tag_b->tag);
+}
+
+/* Compare tag summaries by total time (descending) */
+int compare_tags_by_time(const void *a, const void *b) {
+    const tag_summary_t *tag_a = (const tag_summary_t *)a;
+    const tag_summary_t *tag_b = (const tag_summary_t *)b;
+    /* Sort in descending order (most time first) */
+    if (tag_b->total_minutes != tag_a->total_minutes) {
+        return tag_b->total_minutes - tag_a->total_minutes;
+    }
+    /* If times are equal, fall back to alphabetical */
+    return strcmp(tag_a->tag, tag_b->tag);
+}
+
+/* Compare tag summaries by entry count (descending) */
+int compare_tags_by_count(const void *a, const void *b) {
+    const tag_summary_t *tag_a = (const tag_summary_t *)a;
+    const tag_summary_t *tag_b = (const tag_summary_t *)b;
+    /* Sort in descending order (most entries first) */
+    if (tag_b->entry_count != tag_a->entry_count) {
+        return tag_b->entry_count - tag_a->entry_count;
+    }
+    /* If counts are equal, fall back to alphabetical */
+    return strcmp(tag_a->tag, tag_b->tag);
+}
+
 /* Check if entry passes filters */
 bool entry_passes_filters(logline_t *entry) {
     /* Check date range filter */
@@ -1155,6 +1212,7 @@ int parse_two_phase(FILE* input) {
 int main(int argc, char ** argv) {
     int opt;
     output_format_t format = FORMAT_TEXT;
+    tag_sort_t tag_sort = SORT_ALPHA;
     const char *input_file = NULL;
     const char *scan_path = NULL;
     bool show_daily = false;
@@ -1188,7 +1246,6 @@ int main(int argc, char ** argv) {
         {"help",    no_argument,       0, 'h'},
         {"version", no_argument,       0, 'V'},
         {"format",  required_argument, 0, 'f'},
-        {"tags",    no_argument,       0, 't'},
         {"daily",   no_argument,       0, 'd'},
         {"weekly",  no_argument,       0, 'w'},
         {"monthly", no_argument,       0, 'm'},
@@ -1202,6 +1259,7 @@ int main(int argc, char ** argv) {
         {"from",    required_argument, 0, 1001},
         {"to",      required_argument, 0, 1002},
         {"tag",     required_argument, 0, 1003},
+        {"sort-tags", required_argument, 0, 1004},
         /* Database options */
         {"db",      optional_argument, 0, 3001},
         {"import",  no_argument,       0, 3002},
@@ -1211,7 +1269,7 @@ int main(int argc, char ** argv) {
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "hVf:tdwmvS:R", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hVf:dwmvS:R", long_options, NULL)) != -1) {
         switch (opt) {
             case 'h':
                 print_usage(argv[0]);
@@ -1231,9 +1289,6 @@ int main(int argc, char ** argv) {
                     print_usage(argv[0]);
                     return 1;
                 }
-                break;
-            case 't':
-                /* Tags are always shown in current implementation */
                 break;
             case 'd':
                 show_daily = true;
@@ -1306,6 +1361,19 @@ int main(int argc, char ** argv) {
                 break;
             case 1003: /* --tag */
                 filter_tag = strdup(optarg);
+                break;
+            case 1004: /* --sort-tags */
+                if (strcmp(optarg, "alpha") == 0 || strcmp(optarg, "alphabetical") == 0) {
+                    tag_sort = SORT_ALPHA;
+                } else if (strcmp(optarg, "time") == 0) {
+                    tag_sort = SORT_TIME;
+                } else if (strcmp(optarg, "count") == 0) {
+                    tag_sort = SORT_COUNT;
+                } else {
+                    fprintf(stderr, "Error: Invalid sort method '%s'. Valid options: alpha, time, count\n", optarg);
+                    print_usage(argv[0]);
+                    return 1;
+                }
                 break;
             /* Database options */
             case 3001: /* --db */
@@ -1412,7 +1480,7 @@ int main(int argc, char ** argv) {
                 } else if (show_monthly) {
                     print_monthly_summary(current_logfile);
                 } else if (format == FORMAT_TEXT) {
-                    print_summary(current_logfile);
+                    print_summary(current_logfile, tag_sort);
                 } else if (format == FORMAT_CSV) {
                     print_csv(current_logfile);
                 } else if (format == FORMAT_JSON) {
@@ -1461,7 +1529,7 @@ int main(int argc, char ** argv) {
             } else if (show_monthly) {
                 print_monthly_summary(current_logfile);
             } else if (format == FORMAT_TEXT) {
-                print_summary(current_logfile);
+                print_summary(current_logfile, tag_sort);
             } else if (format == FORMAT_CSV) {
                 print_csv(current_logfile);
             } else if (format == FORMAT_JSON) {
@@ -1535,7 +1603,7 @@ int main(int argc, char ** argv) {
             /* Monthly summary overrides format option */
             print_monthly_summary(current_logfile);
         } else if (format == FORMAT_TEXT) {
-            print_summary(current_logfile);
+            print_summary(current_logfile, tag_sort);
         } else if (format == FORMAT_CSV) {
             print_csv(current_logfile);
         } else if (format == FORMAT_JSON) {

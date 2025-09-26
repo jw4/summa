@@ -249,6 +249,32 @@ summa --db ~/.mydata/time.db --import logfile.md
 
 The database is stored at `~/.summa/summa.db` by default. All query operations work with the same filtering and summary options as file-based parsing.
 
+### Tag Sorting
+
+By default, tags in the summary output are sorted alphabetically. You can change this behavior using the `--sort-tags` option:
+
+```bash
+# Alphabetical sorting (default)
+summa logfile.md
+summa --sort-tags alpha logfile.md
+
+# Sort by total time (most time first)
+summa --sort-tags time logfile.md
+
+# Sort by entry count (most entries first)
+summa --sort-tags count logfile.md
+
+# Combine with other options
+summa -d --sort-tags time --from 2024-01-01 logfile.md
+```
+
+**Sorting Methods:**
+- `alpha` or `alphabetical`: Sort tags alphabetically (A-Z)
+- `time`: Sort by total time spent (highest first)
+- `count`: Sort by number of entries (most frequent first)
+
+When times or counts are equal, tags fall back to alphabetical order as a tie-breaker.
+
 ## Documentation
 
 Full documentation is available via the man page:
@@ -276,6 +302,7 @@ man summa
 |             | `--from DATE`          | Filter entries from DATE (YYYY-MM-DD)          |
 |             | `--to DATE`            | Filter entries to DATE (YYYY-MM-DD)            |
 |             | `--tag TAG`            | Filter entries by TAG (without #)              |
+|             | `--sort-tags METHOD`   | Sort tags by: alpha, time, count (default: alpha) |
 |             | `--db [PATH]`          | Use SQLite database (default: ~/.summa/summa.db) |
 |             | `--import`             | Import entries into database                   |
 |             | `--db-stats`           | Show database statistics                       |
