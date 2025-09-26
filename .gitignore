@@ -1,6 +1,2 @@
 *.o
-*.tab.c
-*.tab.h
-*.yy.c
-*.yy.h
 summa

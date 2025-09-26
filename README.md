@@ -269,6 +269,7 @@ summa -d --sort-tags time --from 2024-01-01 logfile.md
 ```
 
 **Sorting Methods:**
+
 - `alpha` or `alphabetical`: Sort tags alphabetically (A-Z)
 - `time`: Sort by total time spent (highest first)
 - `count`: Sort by number of entries (most frequent first)
@@ -285,29 +286,29 @@ man summa
 
 ## Command-Line Options
 
-| Option      | Long Form              | Description                                    |
-| ----------- | ---------------------- | ---------------------------------------------- |
-| `-h`        | `--help`               | Show help message                              |
-| `-f FORMAT` | `--format FORMAT`      | Output format: text, csv, json (default: text) |
-| `-d`        | `--daily`              | Show daily summary                             |
-| `-w`        | `--weekly`             | Show weekly summary                            |
-| `-m`        | `--monthly`            | Show monthly summary                           |
-| `-v`        | `--verbose`            | Enable verbose output for debugging            |
-| `-S PATH`   | `--scan PATH`          | Scan directory/file for time logs              |
-| `-R`        | `--recursive`          | Scan directories recursively                   |
-|             | `--date-from-filename` | Extract dates from filenames                   |
-|             | `--date-from-path`     | Extract dates from directory paths             |
-|             | `--include PATTERN`    | Include only files matching pattern            |
-|             | `--exclude PATTERN`    | Exclude files matching pattern                 |
-|             | `--from DATE`          | Filter entries from DATE (YYYY-MM-DD)          |
-|             | `--to DATE`            | Filter entries to DATE (YYYY-MM-DD)            |
-|             | `--tag TAG`            | Filter entries by TAG (without #)              |
+| Option      | Long Form              | Description                                       |
+| ----------- | ---------------------- | ------------------------------------------------- |
+| `-h`        | `--help`               | Show help message                                 |
+| `-f FORMAT` | `--format FORMAT`      | Output format: text, csv, json (default: text)    |
+| `-d`        | `--daily`              | Show daily summary                                |
+| `-w`        | `--weekly`             | Show weekly summary                               |
+| `-m`        | `--monthly`            | Show monthly summary                              |
+| `-v`        | `--verbose`            | Enable verbose output for debugging               |
+| `-S PATH`   | `--scan PATH`          | Scan directory/file for time logs                 |
+| `-R`        | `--recursive`          | Scan directories recursively                      |
+|             | `--date-from-filename` | Extract dates from filenames                      |
+|             | `--date-from-path`     | Extract dates from directory paths                |
+|             | `--include PATTERN`    | Include only files matching pattern               |
+|             | `--exclude PATTERN`    | Exclude files matching pattern                    |
+|             | `--from DATE`          | Filter entries from DATE (YYYY-MM-DD)             |
+|             | `--to DATE`            | Filter entries to DATE (YYYY-MM-DD)               |
+|             | `--tag TAG`            | Filter entries by TAG (without #)                 |
 |             | `--sort-tags METHOD`   | Sort tags by: alpha, time, count (default: alpha) |
-|             | `--db [PATH]`          | Use SQLite database (default: ~/.summa/summa.db) |
-|             | `--import`             | Import entries into database                   |
-|             | `--db-stats`           | Show database statistics                       |
-|             | `--db-vacuum`          | Optimize database storage                      |
-|             | `--db-backup PATH`     | Backup database to PATH                        |
+|             | `--db [PATH]`          | Use SQLite database (default: ~/.summa/summa.db)  |
+|             | `--import`             | Import entries into database                      |
+|             | `--db-stats`           | Show database statistics                          |
+|             | `--db-vacuum`          | Optimize database storage                         |
+|             | `--db-backup PATH`     | Backup database to PATH                           |
 
 ## Output Examples
 
@@ -416,7 +417,6 @@ make test
 ./test_summa.sh
 ```
 
-
 ## Contributing
 
 Contributions are welcome! Please ensure:
@@ -430,7 +430,7 @@ Contributions are welcome! Please ensure:
 
 MIT License
 
-Copyright (c) 2024 jw4
+Copyright (c) 2025 John Weldon
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -453,4 +453,3 @@ SOFTWARE.
 ## Support
 
 For issues, questions, or suggestions, please [open an issue](https://github.com/jw4/summa/issues).
-
