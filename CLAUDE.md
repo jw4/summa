@@ -30,11 +30,11 @@ make man          # Preview the man page
 
 ```
 summa/
-├── summa.c          # Main program, CLI parsing, output formatting (~1400 lines)
+├── summa.c          # Main program, CLI parsing, output formatting (~1650 lines)
 ├── summa.h          # Core data structures (date_t, logline_t, logfile_t, taglist_t)
-├── summa_scan.c     # Directory scanning and file discovery (~400 lines)
+├── summa_scan.c     # Directory scanning and file discovery (~500 lines)
 ├── summa_scan.h     # Scan config, file_info_t, scan_result_t structures
-├── summa_db.c       # SQLite database operations (~800 lines)
+├── summa_db.c       # SQLite database operations (~950 lines)
 ├── summa_db.h       # Database types, query options, statistics
 ├── summa.1          # Man page documentation
 ├── Makefile         # Build system
