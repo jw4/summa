@@ -39,7 +39,7 @@ make install PREFIX=/usr/local
 
 - C compiler (gcc or clang)
 - Make build tool
-- Standard C library
+- POSIX-compliant system (Linux, macOS, BSD)
 - SQLite3 library (for database features)
 
 ## Log Format

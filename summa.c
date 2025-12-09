@@ -1,3 +1,6 @@
+/* Enable POSIX features for strdup */
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,21 +18,7 @@
 #define VERSION "unknown"
 #endif
 
-/* Type definitions are now in summa.h */
-
-/* Tag aggregation structure */
-typedef struct {
-    char *tag;
-    int total_minutes;
-    int entry_count;
-} tag_summary_t;
-
-/* Daily summary structure */
-typedef struct {
-    date_t date;
-    int total_minutes;
-    int entry_count;
-} daily_summary_t;
+/* Type definitions and summary structures are now in summa.h */
 
 /* Global data */
 logfile_t *current_logfile = NULL;
@@ -100,15 +89,21 @@ int compare_tags_by_count(const void *a, const void *b);
 /* Create a new logfile */
 logfile_t* create_logfile(void) {
     logfile_t *file = malloc(sizeof(logfile_t));
-    file->entries = malloc(sizeof(logline_t*) * 10);
+    if (!file) return NULL;
+    file->entries = malloc(sizeof(logline_t*) * SUMMA_INITIAL_CAPACITY);
+    if (!file->entries) {
+        free(file);
+        return NULL;
+    }
     file->count = 0;
-    file->capacity = 10;
+    file->capacity = SUMMA_INITIAL_CAPACITY;
     return file;
 }
 
 /* Create a new logline */
 logline_t* create_logline(void) {
     logline_t *entry = malloc(sizeof(logline_t));
+    if (!entry) return NULL;
     memset(entry, 0, sizeof(logline_t));
     return entry;
 }
@@ -116,9 +111,14 @@ logline_t* create_logline(void) {
 /* Create a new taglist */
 taglist_t* create_taglist(void) {
     taglist_t *list = malloc(sizeof(taglist_t));
-    list->tags = malloc(sizeof(char*) * 10);
+    if (!list) return NULL;
+    list->tags = malloc(sizeof(char*) * SUMMA_INITIAL_CAPACITY);
+    if (!list->tags) {
+        free(list);
+        return NULL;
+    }
     list->count = 0;
-    list->capacity = 10;
+    list->capacity = SUMMA_INITIAL_CAPACITY;
     return list;
 }
 
@@ -142,7 +142,12 @@ void add_tag(taglist_t *list, const char *tag) {
         list->tags = new_tags;
     }
 
-    list->tags[list->count++] = strdup(tag);
+    char *tag_copy = strdup(tag);
+    if (!tag_copy) {
+        fprintf(stderr, "Error: Failed to allocate memory for tag\n");
+        return;
+    }
+    list->tags[list->count++] = tag_copy;
 }
 
 /* Add an entry to the logfile */
@@ -173,6 +178,7 @@ char* trim_string(char *str) {
     if (!str) return NULL;
 
     char *trimmed = strdup(str);
+    if (!trimmed) return NULL;
 
     /* Trim trailing whitespace */
     int len = strlen(trimmed);
@@ -291,8 +297,12 @@ void print_summary(logfile_t *file, tag_sort_t sort_mode) {
     printf("\n");
 
     /* Calculate tag summaries */
-    int summary_capacity = 100;  /* Start with space for 100 tags */
+    int summary_capacity = SUMMA_SUMMARY_CAPACITY;
     tag_summary_t *summaries = malloc(sizeof(tag_summary_t) * summary_capacity);
+    if (!summaries) {
+        fprintf(stderr, "Error: Failed to allocate tag summaries\n");
+        return;
+    }
     int tag_count = 0;
     int total_minutes = 0;
 
@@ -332,6 +342,11 @@ void print_summary(logfile_t *file, tag_sort_t sort_mode) {
 
                     tag_idx = tag_count++;
                     summaries[tag_idx].tag = strdup(tag);
+                    if (!summaries[tag_idx].tag) {
+                        fprintf(stderr, "Error: Failed to allocate tag name\n");
+                        tag_count--;  /* Undo the increment */
+                        break;  /* Skip remaining tags */
+                    }
                     summaries[tag_idx].total_minutes = 0;
                     summaries[tag_idx].entry_count = 0;
                 }
@@ -417,8 +432,12 @@ void print_daily_summary(logfile_t *file) {
     printf("=== DAILY SUMMARY ===\n\n");
 
     /* Dynamic array for daily summaries */
-    int day_capacity = 10;
+    int day_capacity = SUMMA_INITIAL_CAPACITY;
     daily_summary_t *days = malloc(sizeof(daily_summary_t) * day_capacity);
+    if (!days) {
+        fprintf(stderr, "Error: Failed to allocate daily summaries\n");
+        return;
+    }
     int day_count = 0;
 
     /* Aggregate by day */
@@ -505,19 +524,13 @@ void print_weekly_summary(logfile_t *file) {
 
     printf("=== WEEKLY SUMMARY ===\n\n");
 
-    /* Structure to hold weekly data */
-    typedef struct {
-        int year;
-        int week;
-        int total_minutes;
-        int entry_count;
-        date_t first_day;
-        date_t last_day;
-    } weekly_summary_t;
-
-    /* Dynamic array for weekly summaries */
-    int week_capacity = 10;
+    /* Dynamic array for weekly summaries (type defined in summa.h) */
+    int week_capacity = SUMMA_INITIAL_CAPACITY;
     weekly_summary_t *weeks = malloc(sizeof(weekly_summary_t) * week_capacity);
+    if (!weeks) {
+        fprintf(stderr, "Error: Failed to allocate weekly summaries\n");
+        return;
+    }
     int week_count = 0;
 
     /* Aggregate by week */
@@ -613,29 +626,29 @@ void print_monthly_summary(logfile_t *file) {
 
     printf("=== MONTHLY SUMMARY ===\n\n");
 
-    /* Structure to hold monthly data */
-    typedef struct {
-        int year;
-        int month;
-        int total_minutes;
-        int entry_count;
-        int days_with_entries;
-    } monthly_summary_t;
-
-    /* Dynamic array for monthly summaries */
-    int month_capacity = 10;
+    /* Dynamic array for monthly summaries (type defined in summa.h) */
+    int month_capacity = SUMMA_INITIAL_CAPACITY;
     monthly_summary_t *months = malloc(sizeof(monthly_summary_t) * month_capacity);
+    if (!months) {
+        fprintf(stderr, "Error: Failed to allocate monthly summaries\n");
+        return;
+    }
     int month_count = 0;
 
-    /* Track unique days per month */
+    /* Track unique days per month (local type, not exported) */
     typedef struct {
         int year;
         int month;
         int day;
     } day_tracker_t;
 
-    int day_tracker_capacity = 100;
+    int day_tracker_capacity = SUMMA_SUMMARY_CAPACITY;
     day_tracker_t *day_tracker = malloc(sizeof(day_tracker_t) * day_tracker_capacity);
+    if (!day_tracker) {
+        fprintf(stderr, "Error: Failed to allocate day tracker\n");
+        free(months);
+        return;
+    }
     int day_tracker_count = 0;
 
     /* Aggregate by month */
@@ -1142,7 +1155,7 @@ logline_t* parse_time_line(const char* line, int line_number) {
 
 /* Main two-phase parsing function */
 int parse_two_phase(FILE* input) {
-    char line[4096];
+    char line[SUMMA_LINE_BUFFER_SIZE];
     int line_number = 0;
 
     while (fgets(line, sizeof(line), input)) {

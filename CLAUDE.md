@@ -30,11 +30,11 @@ make man          # Preview the man page
 
 ```
 summa/
-├── summa.c          # Main program, CLI parsing, output formatting (~1400 lines)
+├── summa.c          # Main program, CLI parsing, output formatting (~1650 lines)
 ├── summa.h          # Core data structures (date_t, logline_t, logfile_t, taglist_t)
-├── summa_scan.c     # Directory scanning and file discovery (~400 lines)
+├── summa_scan.c     # Directory scanning and file discovery (~500 lines)
 ├── summa_scan.h     # Scan config, file_info_t, scan_result_t structures
-├── summa_db.c       # SQLite database operations (~800 lines)
+├── summa_db.c       # SQLite database operations (~950 lines)
 ├── summa_db.h       # Database types, query options, statistics
 ├── summa.1          # Man page documentation
 ├── Makefile         # Build system
@@ -97,6 +97,11 @@ Declared extern in headers, defined in summa.c:
 ## Key Data Structures
 
 ```c
+/* Constants for initial capacities (defined in summa.h) */
+#define SUMMA_INITIAL_CAPACITY      10
+#define SUMMA_SUMMARY_CAPACITY     100
+#define SUMMA_LINE_BUFFER_SIZE    4096
+
 typedef struct {
     int year, month, day;
 } date_t;
@@ -107,7 +112,6 @@ typedef struct {
     char *description;
     int percentage;
     taglist_t *tags;
-    char *raw_line;
 } logline_t;
 
 typedef struct logfile {
@@ -115,6 +119,12 @@ typedef struct logfile {
     int count;
     int capacity;
 } logfile_t;
+
+/* Summary structures for reporting (also in summa.h) */
+typedef struct { char *tag; int total_minutes; int entry_count; } tag_summary_t;
+typedef struct { date_t date; int total_minutes; int entry_count; } daily_summary_t;
+typedef struct { int year; int week; int total_minutes; int entry_count; date_t first_day; date_t last_day; } weekly_summary_t;
+typedef struct { int year; int month; int total_minutes; int entry_count; int days_with_entries; } monthly_summary_t;
 ```
 
 ## Testing
@@ -179,8 +189,10 @@ Key options:
 2. **Memory leaks:** Use `make valgrind` to check for memory issues
 3. **Debug output:** Use `if (verbose) fprintf(stderr, ...)` pattern
 4. **Date handling:** Always validate with `compare_dates()` before use
-5. **Buffer sizes:** Use PATH_MAX for paths, reasonable limits for line buffers
+5. **Buffer sizes:** Use `SUMMA_LINE_BUFFER_SIZE` constant, PATH_MAX for paths
 6. **Error handling:** Print line numbers in validation warnings for user debugging
+7. **Capacity constants:** Use `SUMMA_INITIAL_CAPACITY` and `SUMMA_SUMMARY_CAPACITY` instead of magic numbers
+8. **NULL checks:** Always check malloc/calloc returns before use
 
 ## Dependencies
 
