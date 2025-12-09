@@ -71,7 +71,7 @@ all: build
 # ============= Build Rules =============
 
 $(TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) $^ -o $@
+	$(CC) $^ -o $@ $(LDFLAGS)
 	@echo "Built $(TARGET) ($(BUILD_MODE) mode)"
 
 %.o: %.c
@@ -158,7 +158,12 @@ format:
 
 # ============= Dependencies =============
 
-summa.o: summa.c
+# Header dependencies for proper incremental builds
+HEADERS := summa.h summa_scan.h summa_db.h
+
+summa.o: summa.c $(HEADERS)
+summa_scan.o: summa_scan.c summa.h summa_scan.h
+summa_db.o: summa_db.c $(HEADERS)
 
 # Print Makefile variables for debugging
 .PHONY: print-%

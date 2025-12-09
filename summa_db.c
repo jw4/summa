@@ -2,21 +2,97 @@
  * summa_db.c - SQLite database implementation for Summa
  */
 
+/* Enable POSIX features for strdup, mkdir mode_t, etc. */
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <limits.h>
 #include <errno.h>
 #include <wordexp.h>
 #include "summa_db.h"
 
-/* External functions from summa.c */
-extern logfile_t* create_logfile(void);
-extern void add_entry(logfile_t *file, logline_t *entry);
+/* External functions from summa.c (prototypes now in summa.h) */
 extern bool verbose;  /* Verbose mode flag from summa.c */
+
+/* Forward declaration for mkdir_recursive */
+static int mkdir_recursive(const char *path, mode_t mode);
+
+/* Helper function to load tags for an entry from the database */
+static taglist_t* db_load_tags_for_entry(summa_db_t *db, int entry_id) {
+    if (!db || !db->db) return NULL;
+
+    const char *tags_sql =
+        "SELECT t.name FROM tags t "
+        "JOIN entry_tags et ON t.id = et.tag_id "
+        "WHERE et.entry_id = ?";
+
+    sqlite3_stmt *tag_stmt = NULL;
+    int rc = sqlite3_prepare_v2(db->db, tags_sql, -1, &tag_stmt, NULL);
+    if (rc != SQLITE_OK) return NULL;
+
+    sqlite3_bind_int(tag_stmt, 1, entry_id);
+
+    taglist_t *tags = NULL;
+
+    while (sqlite3_step(tag_stmt) == SQLITE_ROW) {
+        if (!tags) {
+            tags = malloc(sizeof(taglist_t));
+            if (!tags) {
+                sqlite3_finalize(tag_stmt);
+                return NULL;
+            }
+            tags->tags = malloc(SUMMA_INITIAL_CAPACITY * sizeof(char*));
+            if (!tags->tags) {
+                free(tags);
+                sqlite3_finalize(tag_stmt);
+                return NULL;
+            }
+            tags->count = 0;
+            tags->capacity = SUMMA_INITIAL_CAPACITY;
+        }
+
+        const char *tag_name = (const char *)sqlite3_column_text(tag_stmt, 0);
+        if (tag_name) {
+            /* Check if we need to expand the array */
+            if (tags->count >= tags->capacity) {
+                /* Check for integer overflow before doubling capacity */
+                if (tags->capacity > INT_MAX / 2) {
+                    break;  /* Cannot expand further */
+                }
+                tags->capacity *= 2;
+                char **new_tags = realloc(tags->tags, tags->capacity * sizeof(char*));
+                if (!new_tags) {
+                    /* Memory allocation failed - stop adding tags */
+                    break;
+                }
+                tags->tags = new_tags;
+            }
+            tags->tags[tags->count++] = strdup(tag_name);
+        }
+    }
+
+    sqlite3_finalize(tag_stmt);
+    return tags;
+}
+
+/* Helper function to clean up a partially-constructed entry */
+static void cleanup_entry_on_failure(logline_t *entry) {
+    if (!entry) return;
+    if (entry->description) free(entry->description);
+    if (entry->tags) {
+        for (int t = 0; t < entry->tags->count; t++) {
+            free(entry->tags->tags[t]);
+        }
+        free(entry->tags->tags);
+        free(entry->tags);
+    }
+}
 
 /* SQL statements for schema creation */
 static const char *schema_sql =
@@ -646,6 +722,10 @@ logfile_t* db_query_by_date_range(summa_db_t *db, date_t from, date_t to) {
     sqlite3_bind_text(stmt, 2, to_str, -1, SQLITE_STATIC);
 
     logfile_t *result = create_logfile();
+    if (!result) {
+        sqlite3_finalize(stmt);
+        return NULL;
+    }
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         logline_t entry = {0};
@@ -683,54 +763,15 @@ logfile_t* db_query_by_date_range(summa_db_t *db, date_t from, date_t to) {
 
         int entry_id = sqlite3_column_int(stmt, 0);
 
-        /* Get tags for this entry */
-        const char *tags_sql =
-            "SELECT t.name FROM tags t "
-            "JOIN entry_tags et ON t.id = et.tag_id "
-            "WHERE et.entry_id = ?";
-
-        sqlite3_stmt *tag_stmt = NULL;
-        rc = sqlite3_prepare_v2(db->db, tags_sql, -1, &tag_stmt, NULL);
-        if (rc == SQLITE_OK) {
-            sqlite3_bind_int(tag_stmt, 1, entry_id);
-
-            taglist_t *tags = NULL;
-
-            while (sqlite3_step(tag_stmt) == SQLITE_ROW) {
-                if (!tags) {
-                    tags = malloc(sizeof(taglist_t));
-                    tags->tags = malloc(10 * sizeof(char*));
-                    tags->count = 0;
-                    tags->capacity = 10;
-                    tags->capacity = 10;
-                }
-
-                const char *tag_name = (const char *)sqlite3_column_text(tag_stmt, 0);
-                if (tag_name) {
-                    /* Check if we need to expand the array */
-                    if (tags->count >= tags->capacity) {
-                        /* Check for integer overflow before doubling capacity */
-                        if (tags->capacity > INT_MAX / 2) {
-                            break;  /* Cannot expand further */
-                        }
-                        tags->capacity *= 2;
-                        char **new_tags = realloc(tags->tags, tags->capacity * sizeof(char*));
-                        if (!new_tags) {
-                            /* Memory allocation failed - skip this tag */
-                            break;
-                        }
-                        tags->tags = new_tags;
-                    }
-                    tags->tags[tags->count++] = strdup(tag_name);
-                }
-            }
-
-            entry.tags = tags;
-            sqlite3_finalize(tag_stmt);
-        }
+        /* Get tags for this entry using helper function */
+        entry.tags = db_load_tags_for_entry(db, entry_id);
 
         /* Create a heap-allocated copy for the logfile */
         logline_t *entry_copy = malloc(sizeof(logline_t));
+        if (!entry_copy) {
+            cleanup_entry_on_failure(&entry);
+            continue;
+        }
         *entry_copy = entry;
         add_entry(result, entry_copy);
     }
@@ -760,6 +801,10 @@ logfile_t* db_query_by_tag(summa_db_t *db, const char *tag) {
     sqlite3_bind_text(stmt, 1, tag, -1, SQLITE_STATIC);
 
     logfile_t *result = create_logfile();
+    if (!result) {
+        sqlite3_finalize(stmt);
+        return NULL;
+    }
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         logline_t entry = {0};
@@ -797,54 +842,15 @@ logfile_t* db_query_by_tag(summa_db_t *db, const char *tag) {
 
         int entry_id = sqlite3_column_int(stmt, 0);
 
-        /* Get all tags for this entry */
-        const char *tags_sql =
-            "SELECT t.name FROM tags t "
-            "JOIN entry_tags et ON t.id = et.tag_id "
-            "WHERE et.entry_id = ?";
-
-        sqlite3_stmt *tag_stmt = NULL;
-        rc = sqlite3_prepare_v2(db->db, tags_sql, -1, &tag_stmt, NULL);
-        if (rc == SQLITE_OK) {
-            sqlite3_bind_int(tag_stmt, 1, entry_id);
-
-            taglist_t *tags = NULL;
-
-            while (sqlite3_step(tag_stmt) == SQLITE_ROW) {
-                if (!tags) {
-                    tags = malloc(sizeof(taglist_t));
-                    tags->tags = malloc(10 * sizeof(char*));
-                    tags->count = 0;
-                    tags->capacity = 10;
-                    tags->capacity = 10;
-                }
-
-                const char *tag_name = (const char *)sqlite3_column_text(tag_stmt, 0);
-                if (tag_name) {
-                    /* Check if we need to expand the array */
-                    if (tags->count >= tags->capacity) {
-                        /* Check for integer overflow before doubling capacity */
-                        if (tags->capacity > INT_MAX / 2) {
-                            break;  /* Cannot expand further */
-                        }
-                        tags->capacity *= 2;
-                        char **new_tags = realloc(tags->tags, tags->capacity * sizeof(char*));
-                        if (!new_tags) {
-                            /* Memory allocation failed - skip this tag */
-                            break;
-                        }
-                        tags->tags = new_tags;
-                    }
-                    tags->tags[tags->count++] = strdup(tag_name);
-                }
-            }
-
-            entry.tags = tags;
-            sqlite3_finalize(tag_stmt);
-        }
+        /* Get all tags for this entry using helper function */
+        entry.tags = db_load_tags_for_entry(db, entry_id);
 
         /* Create a heap-allocated copy for the logfile */
         logline_t *entry_copy = malloc(sizeof(logline_t));
+        if (!entry_copy) {
+            cleanup_entry_on_failure(&entry);
+            continue;
+        }
         *entry_copy = entry;
         add_entry(result, entry_copy);
     }
