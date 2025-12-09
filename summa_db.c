@@ -73,7 +73,12 @@ static taglist_t* db_load_tags_for_entry(summa_db_t *db, int entry_id) {
                 }
                 tags->tags = new_tags;
             }
-            tags->tags[tags->count++] = strdup(tag_name);
+            char *tag_copy = strdup(tag_name);
+            if (!tag_copy) {
+                /* Memory allocation failed - return what we have so far */
+                break;
+            }
+            tags->tags[tags->count++] = tag_copy;
         }
     }
 
@@ -81,13 +86,15 @@ static taglist_t* db_load_tags_for_entry(summa_db_t *db, int entry_id) {
     return tags;
 }
 
-/* Helper function to clean up a partially-constructed entry */
+/* Helper function to clean up a partially-constructed entry's members (not the entry itself) */
 static void cleanup_entry_on_failure(logline_t *entry) {
     if (!entry) return;
     if (entry->description) free(entry->description);
     if (entry->tags) {
         for (int t = 0; t < entry->tags->count; t++) {
-            free(entry->tags->tags[t]);
+            if (entry->tags->tags[t]) {
+                free(entry->tags->tags[t]);
+            }
         }
         free(entry->tags->tags);
         free(entry->tags);

@@ -103,6 +103,7 @@ logfile_t* create_logfile(void) {
 /* Create a new logline */
 logline_t* create_logline(void) {
     logline_t *entry = malloc(sizeof(logline_t));
+    if (!entry) return NULL;
     memset(entry, 0, sizeof(logline_t));
     return entry;
 }
@@ -141,7 +142,12 @@ void add_tag(taglist_t *list, const char *tag) {
         list->tags = new_tags;
     }
 
-    list->tags[list->count++] = strdup(tag);
+    char *tag_copy = strdup(tag);
+    if (!tag_copy) {
+        fprintf(stderr, "Error: Failed to allocate memory for tag\n");
+        return;
+    }
+    list->tags[list->count++] = tag_copy;
 }
 
 /* Add an entry to the logfile */
@@ -172,6 +178,7 @@ char* trim_string(char *str) {
     if (!str) return NULL;
 
     char *trimmed = strdup(str);
+    if (!trimmed) return NULL;
 
     /* Trim trailing whitespace */
     int len = strlen(trimmed);
@@ -335,6 +342,11 @@ void print_summary(logfile_t *file, tag_sort_t sort_mode) {
 
                     tag_idx = tag_count++;
                     summaries[tag_idx].tag = strdup(tag);
+                    if (!summaries[tag_idx].tag) {
+                        fprintf(stderr, "Error: Failed to allocate tag name\n");
+                        tag_count--;  /* Undo the increment */
+                        break;  /* Skip remaining tags */
+                    }
                     summaries[tag_idx].total_minutes = 0;
                     summaries[tag_idx].entry_count = 0;
                 }
@@ -1143,7 +1155,7 @@ logline_t* parse_time_line(const char* line, int line_number) {
 
 /* Main two-phase parsing function */
 int parse_two_phase(FILE* input) {
-    char line[4096];
+    char line[SUMMA_LINE_BUFFER_SIZE];
     int line_number = 0;
 
     while (fgets(line, sizeof(line), input)) {
