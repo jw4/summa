@@ -1522,11 +1522,11 @@ int main(int argc, char ** argv) {
             return 1;
         }
 
-        printf("Found %d time log files with %d total entries\n",
+        fprintf(stderr, "Found %d time log files with %d total entries\n",
                scan_result->file_count, scan_result->entries_total);
 
         if (scan_result->files_without_dates > 0) {
-            printf("Files with inferred dates: %d\n",
+            fprintf(stderr, "Files with inferred dates: %d\n",
                    scan_result->files_with_dates - scan_result->files_without_dates);
         }
 
